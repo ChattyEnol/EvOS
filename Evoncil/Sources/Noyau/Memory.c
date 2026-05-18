@@ -337,6 +337,14 @@ uint64_t GetFreeMemorySize(void) { return FREE_MEMORY_SIZE; }
 
 uint64_t GetUsedMemorySize(void) { return USED_MEMORY_SIZE; }
 
+uint64_t GetPhysicalAddress(void *address)
+{
+    if (address == NULL)
+        return 0;
+
+    return GetMappedPhysicalAddress((uint64_t)address);
+}
+
 static uint64_t AlignUp(uint64_t value, uint64_t alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);

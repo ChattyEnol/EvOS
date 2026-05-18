@@ -36,11 +36,9 @@ void *AllocatePage(uint64_t size);
 void FreePage(void *address, uint64_t size);
 
 /**
- * 临时来一个调试函数吧。
- * 获取物理地址。
- * void GetPhysicalAddress();
+ * 查询当前页表中虚拟地址对应的物理地址。
+ * DMA 设备配置 Ring、Buffer、Context 时需要拿到真实物理地址。
  */
-
-// uint64_t GetPhysicalAddress(void *address);
+uint64_t GetPhysicalAddress(void *address);
 
 #endif // NOYAU_MEMORY_H

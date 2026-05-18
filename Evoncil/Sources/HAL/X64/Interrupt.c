@@ -7,6 +7,7 @@
 
 #include <HAL/HAL.h>
 #include <HAL/X64/IDT.h>
+#include <Noyau/Syscall.h>
 
 #include <stddef.h>
 
@@ -39,6 +40,7 @@ static IDT_GATE_DESCRIPTOR IDT_TABLE[256];
     INTERRUPT_OPT(32)     \
     INTERRUPT_OPT(33)     \
     INTERRUPT_OPT(34)     \
+    INTERRUPT_OPT(128)    \
     INTERRUPT_OPT(255)
 
 // 声明汇编里的那些跳板函数。
@@ -49,7 +51,7 @@ INTERRUPT_VECTORS
 // 准备一个数组，存放业务层的 C 处理函数。
 static HandleInterrupt InterruptHandlers[256] = {0};
 
-static void SetIDTEntry(uint8_t vector, void *isr_stub);
+static void SetIDTEntry(uint8_t vector, void *isr_stub, uint8_t dpl);
 static void InitIDT(void);
 static inline void WriteIDTR(IDT_REGISTER *idtr);
 
@@ -65,9 +67,15 @@ void InitInterrupt(WORLD *world)
 }
 
 // 通用分发中心（这个函数会被 ISR.s 里的汇编调用）。
-void CommonInterruptHandler(uint64_t vector, uint64_t error_code)
+void CommonInterruptHandler(uint64_t vector, uint64_t error_code, INTERRUPT_FRAME *frame)
 {
     (void)error_code;
+
+    if (vector == 128)
+    {
+        EnolCaller(frame);
+        return;
+    }
 
     if (vector >= 32)
     {
@@ -98,9 +106,9 @@ void SetInterruptGate(uint8_t vector, void *handler)
 static void InitIDT(void)
 {
     for (uint32_t index = 0; index < 256; index++)
-        SetIDTEntry((uint8_t)index, NULL);
+        SetIDTEntry((uint8_t)index, NULL, 0);
 
-#define INTERRUPT_OPT(vector) SetIDTEntry(vector, ISRStub##vector);
+#define INTERRUPT_OPT(vector) SetIDTEntry(vector, ISRStub##vector, vector == 128 ? 3 : 0);
     INTERRUPT_VECTORS
 #undef INTERRUPT_OPT
 
@@ -110,13 +118,25 @@ static void InitIDT(void)
     WriteIDTR(&idtr);
 }
 
-static void SetIDTEntry(uint8_t vector, void *isr_stub)
+static void SetIDTEntry(uint8_t vector, void *isr_stub, uint8_t dpl)
 {
+    if (isr_stub == NULL)
+    {
+        IDT_TABLE[vector].Offset_15_0 = 0;
+        IDT_TABLE[vector].Selector = 0;
+        IDT_TABLE[vector].IST = 0;
+        IDT_TABLE[vector].P_DPL_0_Type = 0;
+        IDT_TABLE[vector].Offset_31_16 = 0;
+        IDT_TABLE[vector].Offset_63_32 = 0;
+        IDT_TABLE[vector].Reserved = 0;
+        return;
+    }
+
     uint64_t address = (uint64_t)isr_stub;
     IDT_TABLE[vector].Offset_15_0 = address & 0xFFFF;
     IDT_TABLE[vector].Selector = 0x08;
     IDT_TABLE[vector].IST = 0;
-    IDT_TABLE[vector].P_DPL_0_Type = 0x8E;
+    IDT_TABLE[vector].P_DPL_0_Type = (uint8_t)(0x8E | ((dpl & 0x3u) << 5));
     IDT_TABLE[vector].Offset_31_16 = (address >> 16) & 0xFFFF;
     IDT_TABLE[vector].Offset_63_32 = (address >> 32) & 0xFFFFFFFF;
     IDT_TABLE[vector].Reserved = 0;

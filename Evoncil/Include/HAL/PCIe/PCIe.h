@@ -31,6 +31,19 @@ typedef struct
 } PCIeDevice;
 
 /**
+ * 初始化 PCIe 配置空间访问方式。
+ * 优先解析 ACPI MCFG 并使用 ECAM；如果固件没有提供 MCFG，
+ * 模块会自动退回到传统 CF8/CFC 配置机制。
+ */
+void InitPCIe(void *acpi_root);
+
+/**
+ * 返回当前 PCIe 配置空间访问方式名称。
+ * 主要用于控制台调试输出。
+ */
+const char *GetPCIeAccessName(void);
+
+/**
  * 寻找符合 Class 规范的第 index 个设备。
  * index 从 0 开始，用来枚举多个同类设备。
  */

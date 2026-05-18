@@ -10,6 +10,7 @@
 #include <Noyau/Process.h>
 #include <File/File.h>
 #include <HAL/HAL.h>
+#include <HAL/PCIe/PCIe.h>
 #include <HAL/PCIe/xHCI/xHCI.h>
 #include <UI/Console.h>
 #include <UI/TextIO.h>
@@ -120,6 +121,7 @@ static void PrintInfo(void)
     kprintf("Free memory: %u KB\n", (unsigned int)(GetFreeMemorySize() / 1024));
     kprintf("Used memory: %u KB\n", (unsigned int)(GetUsedMemorySize() / 1024));
     kprintf("Interrupt: %s\n", GetInterruptControllerName());
+    kprintf("PCIe config: %s\n", GetPCIeAccessName());
     kprintf("xHCI: %s\n", IsXhciReady() ? "ready" : "not ready");
     kprintf("Processes: %u\n", GetProcessCount());
     kprintf("File system: %s\n", IsFileSystemReady() ? "FAT32" : "not mounted");

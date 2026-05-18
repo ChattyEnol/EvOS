@@ -2,12 +2,11 @@
  *
  * (C) Charity Enol
  *
- * 键盘驱动头文件。
- * 键盘原始的 Scan Code 太抽象了。
- * 字节不固定、历史上不一样、USB 似乎和内置的键盘也不一样。
- * 键盘驱动必须统一，然后上报一个抽象出来的统一虚拟键码！
- * 还有，由于我想要精简驱动，因此对应的字符啊功能啊这些就放功能模块里吧！
- * 字符显示可放 `TextIO.c` 中。
+ * 现代键盘输入层头文件。
+ * 这里不再碰 PS/2，也不再读 0x60/0x64 这种老硬件端口。
+ * xHCI / USB HID 驱动只需要把标准 HID Boot Keyboard Report 喂进来，
+ * 这个模块负责转换成 EvOS 自己统一的 KEY_CODE。
+ * 字符、大小写、快捷键这些仍然交给 TextIO 和更上层模块处理。
  */
 
 #ifndef DRIVERS_KEYBOARD_H
@@ -124,9 +123,23 @@ typedef struct
 
 /**
  * 初始化键盘驱动。
- * 内部会向驱动注册中断处理函数，并使能外设。
+ * 只清空软件输入队列和 HID 状态，不做任何硬件初始化。
  */
 void InitKeyboard(void);
+
+/**
+ * 向统一键盘队列提交一个已经转换好的按键事件。
+ * 这个接口主要留给未来更复杂的 HID 解析器或虚拟输入设备使用。
+ */
+void SubmitKeyboardEvent(KEY_CODE key_code, bool pressed);
+
+/**
+ * 解析 USB HID Boot Keyboard Report 并提交按键变化。
+ * @param report 指向 8 字节 Boot Keyboard Report 的缓冲区。
+ * @param size 缓冲区大小，至少需要 8 字节。
+ * @return bool 成功解析返回 true，参数错误返回 false。
+ */
+bool SubmitKeyboardHIDReport(const uint8_t *report, uint32_t size);
 
 /**
  * 从键盘缓冲区中异步读取一个按键事件

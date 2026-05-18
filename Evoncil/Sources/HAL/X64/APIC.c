@@ -21,7 +21,12 @@
 #define LOCAL_APIC_EOI 0x0B0
 #define LOCAL_APIC_SPURIOUS 0x0F0
 #define LOCAL_APIC_TPR 0x080
+#define LOCAL_APIC_LVT_TIMER 0x320
+#define LOCAL_APIC_TIMER_INITIAL_COUNT 0x380
+#define LOCAL_APIC_TIMER_DIVIDE 0x3E0
 
+#define LOCAL_APIC_TIMER_VECTOR 32
+#define LOCAL_APIC_TIMER_PERIODIC (1u << 17)
 #define LOCAL_APIC_SPURIOUS_VECTOR 255
 #define LOCAL_APIC_MMIO_SIZE 0x1000
 #define IO_APIC_MMIO_SIZE 0x1000
@@ -143,13 +148,12 @@ static uint32_t INTERRUPT_OVERRIDE_COUNT = 0;
 static uint64_t LOCAL_APIC_PHYSICAL_ADDRESS = 0xFEE00000;
 static bool APIC_READY = false;
 
-static void DisableLegacyPIC(void);
-static void RouteExternalInterruptsToAPIC(void);
 static MADT *FindMADT(void *acpi_root);
 static ACPI_TABLE_HEADER *FindACPITable(void *acpi_root, uint32_t signature);
 static bool IsRSDP20(const RSDP_DESCRIPTOR *rsdp);
 static void ParseMADT(MADT *madt);
 static void InitLocalAPIC(void);
+static void InitLocalAPICTimer(void);
 static void InitIOAPICs(void);
 static bool IsX2APICSupported(void);
 static uint32_t GetX2APICMSR(uint32_t register_offset);
@@ -176,12 +180,10 @@ void InitAPIC(void *acpi_root)
     if (madt != NULL)
         ParseMADT(madt);
 
-    RouteExternalInterruptsToAPIC();
     InitLocalAPIC();
     InitIOAPICs();
-    DisableLegacyPIC();
 
-    APIC_READY = LOCAL_APIC_MODE != APIC_MODE_NONE && IO_APIC_COUNT > 0;
+    APIC_READY = LOCAL_APIC_MODE != APIC_MODE_NONE;
 }
 
 void SendEndOfInterrupt(void)
@@ -243,26 +245,6 @@ uint32_t GetMSIMessageAddress(void)
 uint32_t GetMSIMessageData(uint8_t vector)
 {
     return vector;
-}
-
-static void DisableLegacyPIC(void)
-{
-    WriteHardwarePortByte(0x20, 0x11);
-    WriteHardwarePortByte(0xA0, 0x11);
-    WriteHardwarePortByte(0x21, 0x20);
-    WriteHardwarePortByte(0xA1, 0x28);
-    WriteHardwarePortByte(0x21, 0x04);
-    WriteHardwarePortByte(0xA1, 0x02);
-    WriteHardwarePortByte(0x21, 0x01);
-    WriteHardwarePortByte(0xA1, 0x01);
-    WriteHardwarePortByte(0x21, 0xFF);
-    WriteHardwarePortByte(0xA1, 0xFF);
-}
-
-static void RouteExternalInterruptsToAPIC(void)
-{
-    WriteHardwarePortByte(0x22, 0x70);
-    WriteHardwarePortByte(0x23, 0x01);
 }
 
 static MADT *FindMADT(void *acpi_root)
@@ -404,6 +386,17 @@ static void InitLocalAPIC(void)
     WriteLocalAPIC(
         LOCAL_APIC_SPURIOUS,
         ReadLocalAPIC(LOCAL_APIC_SPURIOUS) | 0x100 | LOCAL_APIC_SPURIOUS_VECTOR);
+
+    InitLocalAPICTimer();
+}
+
+static void InitLocalAPICTimer(void)
+{
+    WriteLocalAPIC(LOCAL_APIC_TIMER_DIVIDE, 0x3);
+    WriteLocalAPIC(
+        LOCAL_APIC_LVT_TIMER,
+        LOCAL_APIC_TIMER_PERIODIC | LOCAL_APIC_TIMER_VECTOR);
+    WriteLocalAPIC(LOCAL_APIC_TIMER_INITIAL_COUNT, 10000000u);
 }
 
 static void InitIOAPICs(void)

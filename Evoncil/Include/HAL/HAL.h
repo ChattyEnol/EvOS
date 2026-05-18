@@ -59,6 +59,36 @@ void SetInterruptGate(uint8_t vector, void *handler);
 void SetHardwareInterrupt(uint8_t irq, uint8_t vector);
 void SendEndOfInterrupt(void);
 
+/**
+ * 汇编中断入口保存下来的通用寄存器和硬件栈帧。
+ * EnolCaller 会直接修改这里的 RAX，把系统调用返回值带回去。
+ */
+typedef struct
+{
+    uint64_t R15;
+    uint64_t R14;
+    uint64_t R13;
+    uint64_t R12;
+    uint64_t R11;
+    uint64_t R10;
+    uint64_t R9;
+    uint64_t R8;
+    uint64_t RDI;
+    uint64_t RSI;
+    uint64_t RBP;
+    uint64_t RBX;
+    uint64_t RDX;
+    uint64_t RCX;
+    uint64_t RAX;
+    uint64_t Vector;
+    uint64_t ErrorCode;
+    uint64_t RIP;
+    uint64_t CS;
+    uint64_t RFLAGS;
+    uint64_t RSP;
+    uint64_t SS;
+} INTERRUPT_FRAME;
+
 // 中断处理函数原型。
 typedef void (*HandleInterrupt)(void);
 

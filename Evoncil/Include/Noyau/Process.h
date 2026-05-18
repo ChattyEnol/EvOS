@@ -34,13 +34,58 @@ typedef struct
     char Name[PROCESS_NAME_SIZE];
     PROCESS_ENTRY Entry;
     void *Context;
+    uint32_t TimeSlice;
+    uint32_t Ticks;
 } PROCESS;
 
+/**
+ * 初始化进程表，并创建内核自身的初始进程记录。
+ */
 void InitProcess(void);
+
+/**
+ * 创建一个处于 READY 状态的新进程。
+ */
 PROCESS_ID CreateProcess(const char *name, PROCESS_ENTRY entry, void *context);
+
+/**
+ * 根据 PID 查找进程记录。
+ */
 PROCESS *GetProcess(PROCESS_ID process_id);
+
+/**
+ * 获取当前正在运行的进程记录。
+ */
 PROCESS *GetCurrentProcess(void);
+
+/**
+ * 获取当前正在运行的进程 PID。
+ */
+PROCESS_ID GetCurrentProcessID(void);
+
+/**
+ * 获取进程表中非 UNUSED 的进程数量。
+ */
 uint32_t GetProcessCount(void);
+
+/**
+ * 修改进程状态。
+ */
 bool SetProcessState(PROCESS_ID process_id, PROCESS_STATE state);
+
+/**
+ * 主动让出当前时间片。
+ */
+void YieldProcess(void);
+
+/**
+ * 执行一次轮转调度，选择下一个 READY 进程运行。
+ */
+void ScheduleProcess(void);
+
+/**
+ * 由时钟中断调用的调度计时入口。
+ */
+void TickProcess(void);
 
 #endif // NOYAU_PROCESS_H

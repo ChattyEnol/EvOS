@@ -6,10 +6,64 @@
  */
 
 #include <HAL/PCIe/PCIe.h>
+#include <Noyau/Memory.h>
 #include <stddef.h>
 
 #define PCI_CONFIG_ADDRESS_PORT 0xCF8
 #define PCI_CONFIG_DATA_PORT 0xCFC
+#define ACPI_SIGNATURE_MCFG 0x4746434Du
+
+typedef struct
+{
+    char Signature[8];
+    uint8_t Checksum;
+    char OEMID[6];
+    uint8_t Revision;
+    uint32_t RsdtAddress;
+    uint32_t Length;
+    uint64_t XsdtAddress;
+    uint8_t ExtendedChecksum;
+    uint8_t Reserved[3];
+} __attribute__((packed)) RSDP_DESCRIPTOR;
+
+typedef struct
+{
+    uint32_t Signature;
+    uint32_t Length;
+    uint8_t Revision;
+    uint8_t Checksum;
+    char OEMID[6];
+    char OEMTableID[8];
+    uint32_t OEMRevision;
+    uint32_t CreatorID;
+    uint32_t CreatorRevision;
+} __attribute__((packed)) ACPI_TABLE_HEADER;
+
+typedef struct
+{
+    ACPI_TABLE_HEADER Header;
+    uint64_t Entries[];
+} __attribute__((packed)) XSDT;
+
+typedef struct
+{
+    ACPI_TABLE_HEADER Header;
+    uint32_t Entries[];
+} __attribute__((packed)) RSDT;
+
+typedef struct
+{
+    uint64_t BaseAddress;
+    uint16_t SegmentGroup;
+    uint8_t StartBus;
+    uint8_t EndBus;
+    uint32_t Reserved;
+} __attribute__((packed)) MCFG_ENTRY;
+
+static void *ECAM_BASE = NULL;
+static uint8_t ECAM_START_BUS = 0;
+static uint8_t ECAM_END_BUS = 0;
+static bool ECAM_READY = false;
 
 /**
  * 从 CPU 的指定 I/O 端口读取 32 位（4字节）数据。
@@ -72,6 +126,46 @@ static bool WriteConfig32(
     uint32_t value);
 
 /**
+ * 通过 ACPI 根指针寻找指定签名的系统描述表。
+ */
+static ACPI_TABLE_HEADER *FindACPITable(void *acpi_root, uint32_t signature);
+
+/**
+ * 判断 RSDP 是否是 2.0 及以上格式。
+ */
+static bool IsRSDP20(const RSDP_DESCRIPTOR *rsdp);
+
+/**
+ * 初始化 MCFG/ECAM 配置空间访问。
+ */
+static bool InitECAM(void *acpi_root);
+
+/**
+ * 使用 ECAM 读取 PCIe 配置空间。
+ */
+static bool ReadECAMConfig32(
+    uint8_t bus,
+    uint8_t device,
+    uint8_t function,
+    uint8_t offset,
+    uint32_t *value);
+
+/**
+ * 使用 ECAM 写入 PCIe 配置空间。
+ */
+static bool WriteECAMConfig32(
+    uint8_t bus,
+    uint8_t device,
+    uint8_t function,
+    uint8_t offset,
+    uint32_t value);
+
+/**
+ * 比较 ACPI 签名内容。
+ */
+static bool SignatureEquals(const char *signature, const char *target);
+
+/**
  * 看看这个物理坐标上到底有没有插着设备。
  * 它的逻辑极其粗暴，直接去读该坐标设备的 0x00 寄存器（VendorID）。如果
  * 返回的是 0xFFFF，说明这块插槽是空的，连个鬼影都没有，后面就不用白费劲了。
@@ -96,8 +190,21 @@ static bool ReadDeviceHeader(
     PCIeDevice *device_out);
 
 /**
- * 头文件里的两个对外接口实现。
+ * 头文件里的对外接口实现。
  */
+
+void InitPCIe(void *acpi_root)
+{
+    ECAM_BASE = NULL;
+    ECAM_START_BUS = 0;
+    ECAM_END_BUS = 0;
+    ECAM_READY = InitECAM(acpi_root);
+}
+
+const char *GetPCIeAccessName(void)
+{
+    return ECAM_READY ? "ECAM" : "CF8/CFC";
+}
 
 bool PCIeEnableBusMastering(const PCIeDevice *device)
 {
@@ -225,6 +332,9 @@ static bool ReadConfig32(
     if (value == NULL || (offset & 0x3u) != 0)
         return false;
 
+    if (ECAM_READY)
+        return ReadECAMConfig32(bus, device, function, offset, value);
+
     WritePort32(PCI_CONFIG_ADDRESS_PORT, BuildConfigAddress(bus, device, function, offset));
     *value = ReadPort32((uint16_t)(PCI_CONFIG_DATA_PORT + (offset & 0x3u)));
     return true;
@@ -239,6 +349,9 @@ static bool WriteConfig32(
 {
     if ((offset & 0x3u) != 0)
         return false;
+
+    if (ECAM_READY)
+        return WriteECAMConfig32(bus, device, function, offset, value);
 
     WritePort32(PCI_CONFIG_ADDRESS_PORT, BuildConfigAddress(bus, device, function, offset));
     WritePort32((uint16_t)(PCI_CONFIG_DATA_PORT + (offset & 0x3u)), value);
@@ -318,5 +431,127 @@ static bool ReadDeviceHeader(
             // 传统的 I/O 端口 BAR
             device_out->BAR[i] = (uint64_t)(barLow & ~0x3u);
     }
+    return true;
+}
+
+static ACPI_TABLE_HEADER *FindACPITable(void *acpi_root, uint32_t signature)
+{
+    if (acpi_root == NULL)
+        return NULL;
+
+    RSDP_DESCRIPTOR *rsdp = (RSDP_DESCRIPTOR *)acpi_root;
+    if (!SignatureEquals(rsdp->Signature, "RSD PTR "))
+        return NULL;
+
+    if (IsRSDP20(rsdp) && rsdp->XsdtAddress != 0)
+    {
+        XSDT *xsdt = (XSDT *)(uintptr_t)rsdp->XsdtAddress;
+        uint32_t entryCount = (xsdt->Header.Length - sizeof(ACPI_TABLE_HEADER)) / sizeof(uint64_t);
+
+        for (uint32_t index = 0; index < entryCount; index++)
+        {
+            ACPI_TABLE_HEADER *table = (ACPI_TABLE_HEADER *)(uintptr_t)xsdt->Entries[index];
+            if (table->Signature == signature)
+                return table;
+        }
+    }
+
+    if (rsdp->RsdtAddress != 0)
+    {
+        RSDT *rsdt = (RSDT *)(uintptr_t)rsdp->RsdtAddress;
+        uint32_t entryCount = (rsdt->Header.Length - sizeof(ACPI_TABLE_HEADER)) / sizeof(uint32_t);
+
+        for (uint32_t index = 0; index < entryCount; index++)
+        {
+            ACPI_TABLE_HEADER *table = (ACPI_TABLE_HEADER *)(uintptr_t)rsdt->Entries[index];
+            if (table->Signature == signature)
+                return table;
+        }
+    }
+
+    return NULL;
+}
+
+static bool IsRSDP20(const RSDP_DESCRIPTOR *rsdp)
+{
+    return rsdp->Revision >= 2 && rsdp->Length >= sizeof(RSDP_DESCRIPTOR);
+}
+
+static bool InitECAM(void *acpi_root)
+{
+    ACPI_TABLE_HEADER *header = FindACPITable(acpi_root, ACPI_SIGNATURE_MCFG);
+    if (header == NULL || header->Length < sizeof(ACPI_TABLE_HEADER) + 8 + sizeof(MCFG_ENTRY))
+        return false;
+
+    MCFG_ENTRY *entries = (MCFG_ENTRY *)((uint8_t *)header + sizeof(ACPI_TABLE_HEADER) + 8);
+    uint32_t entryCount =
+        (header->Length - sizeof(ACPI_TABLE_HEADER) - 8) / sizeof(MCFG_ENTRY);
+
+    for (uint32_t index = 0; index < entryCount; index++)
+    {
+        if (entries[index].SegmentGroup != 0 || entries[index].BaseAddress == 0)
+            continue;
+
+        uint64_t busCount = (uint64_t)entries[index].EndBus - entries[index].StartBus + 1;
+        uint64_t mapSize = busCount << 20;
+
+        ECAM_BASE = MapDeviceMemory(entries[index].BaseAddress, mapSize);
+        if (ECAM_BASE == NULL)
+            return false;
+
+        ECAM_START_BUS = entries[index].StartBus;
+        ECAM_END_BUS = entries[index].EndBus;
+        return true;
+    }
+
+    return false;
+}
+
+static bool ReadECAMConfig32(
+    uint8_t bus,
+    uint8_t device,
+    uint8_t function,
+    uint8_t offset,
+    uint32_t *value)
+{
+    if (bus < ECAM_START_BUS || bus > ECAM_END_BUS || device >= 32 || function >= 8)
+        return false;
+
+    uint64_t addressOffset =
+        ((uint64_t)(bus - ECAM_START_BUS) << 20) |
+        ((uint64_t)device << 15) |
+        ((uint64_t)function << 12) |
+        (uint64_t)offset;
+
+    *value = *(volatile uint32_t *)((uintptr_t)ECAM_BASE + addressOffset);
+    return true;
+}
+
+static bool WriteECAMConfig32(
+    uint8_t bus,
+    uint8_t device,
+    uint8_t function,
+    uint8_t offset,
+    uint32_t value)
+{
+    if (bus < ECAM_START_BUS || bus > ECAM_END_BUS || device >= 32 || function >= 8)
+        return false;
+
+    uint64_t addressOffset =
+        ((uint64_t)(bus - ECAM_START_BUS) << 20) |
+        ((uint64_t)device << 15) |
+        ((uint64_t)function << 12) |
+        (uint64_t)offset;
+
+    *(volatile uint32_t *)((uintptr_t)ECAM_BASE + addressOffset) = value;
+    return true;
+}
+
+static bool SignatureEquals(const char *signature, const char *target)
+{
+    for (uint32_t index = 0; index < 8; index++)
+        if (signature[index] != target[index])
+            return false;
+
     return true;
 }

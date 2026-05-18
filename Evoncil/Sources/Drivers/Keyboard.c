@@ -2,250 +2,140 @@
  *
  * (C) Charity Enol
  *
- * 键盘驱动实现。
- * 只负责接收中断、解析 PS/2 Set 2 扫描码状态机，并塞入环形缓冲区。
- * 没有任何字符转换，没有任何业务逻辑！
+ * 现代键盘输入实现。
+ * 本模块不再直接访问 PS/2 控制器，只接收 USB HID Boot Keyboard Report，
+ * 然后把按键变化转换成 EvOS 统一的 KEY_CODE 事件。
  */
 
-#include <HAL/HAL.h>
 #include <Drivers/Keyboard.h>
+
 #include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
-// 调试用。
-#include <UI/TextIO.h>
-
-/**
- * 硬件端口定义。
- */
-
-#define KEYBOARD_DATA_PORT 0x60
-#define KEYBOARD_STATUS_PORT 0x64
-#define KEYBOARD_COMMAND_PORT 0x64
-#define KEYBOARD_OUTPUT_READY 0x01
-#define KEYBOARD_INPUT_BUSY 0x02
-#define KEYBOARD_COMMAND_READ_CONFIG 0x20
-#define KEYBOARD_COMMAND_WRITE_CONFIG 0x60
-#define KEYBOARD_COMMAND_ENABLE_FIRST_PORT 0xAE
-#define KEYBOARD_COMMAND_ENABLE_SCANNING 0xF4
-#define KEYBOARD_CONFIG_FIRST_PORT_INTERRUPT 0x01
-#define KEYBOARD_CONFIG_FIRST_PORT_CLOCK_DISABLED 0x10
-#define KEYBOARD_CONFIG_TRANSLATION 0x40
-
-// 环形缓冲区大小（必须是 2 的幂次，方便或者刚好够用）。
 #define KEYBOARD_BUFFER_SIZE 256
+#define HID_BOOT_REPORT_SIZE 8
+#define HID_BOOT_KEY_COUNT 6
 
-// 环形缓冲区。
-static KEYBOARD_EVENT KeyboardBuffer[KEYBOARD_BUFFER_SIZE];
-static uint32_t BufferHead = 0; // 写入位置
-static uint32_t BufferTail = 0; // 读取位置
+#define HID_MODIFIER_LEFT_CTRL 0
+#define HID_MODIFIER_LEFT_SHIFT 1
+#define HID_MODIFIER_LEFT_ALT 2
+#define HID_MODIFIER_LEFT_GUI 3
+#define HID_MODIFIER_RIGHT_CTRL 4
+#define HID_MODIFIER_RIGHT_SHIFT 5
+#define HID_MODIFIER_RIGHT_ALT 6
+#define HID_MODIFIER_RIGHT_GUI 7
 
-// PS/2 状态机。
-typedef enum
+typedef struct
 {
-    STATE_NORMAL,               // 正常状态
-    STATE_EXPECT_BREAK,         // 收到 0xF0，期待下一个是断码
-    STATE_EXTENDED,             // 收到 0xE0，期待扩展码
-    STATE_EXTENDED_EXPECT_BREAK // 收到 0xE0 然后收到 0xF0
-} PS2_STATE;
+    KEY_CODE KeyCode;
+    uint8_t LeftBit;
+    uint8_t RightBit;
+} HID_MODIFIER_BINDING;
 
-static PS2_STATE CurrentState = STATE_NORMAL;
-
-static bool WaitKeyboardRead(void);
-static bool WaitKeyboardWrite(void);
-static bool ReadKeyboardControllerData(uint8_t *data);
-static bool WriteKeyboardControllerCommand(uint8_t command);
-static bool WriteKeyboardControllerData(uint8_t data);
-static void InitKeyboardController(void);
-
-// 扫描码映射表。
-
-// 普通按键。
-static const KEY_CODE NormalMap[256] = {
-    // 字母。
-    [0x1C] = KEY_A,
-    [0x32] = KEY_B,
-    [0x21] = KEY_C,
-    [0x23] = KEY_D,
-    [0x24] = KEY_E,
-    [0x2B] = KEY_F,
-    [0x34] = KEY_G,
-    [0x33] = KEY_H,
-    [0x43] = KEY_I,
-    [0x3B] = KEY_J,
-    [0x42] = KEY_K,
-    [0x4B] = KEY_L,
-    [0x3A] = KEY_M,
-    [0x31] = KEY_N,
-    [0x44] = KEY_O,
-    [0x4D] = KEY_P,
-    [0x15] = KEY_Q,
-    [0x2D] = KEY_R,
-    [0x1B] = KEY_S,
-    [0x2C] = KEY_T,
-    [0x3C] = KEY_U,
-    [0x2A] = KEY_V,
-    [0x1D] = KEY_W,
-    [0x22] = KEY_X,
-    [0x35] = KEY_Y,
-    [0x1A] = KEY_Z,
-
-    // 数字与符号。
-    [0x0E] = KEY_GRAVE,
-    [0x16] = KEY_1,
-    [0x1E] = KEY_2,
-    [0x26] = KEY_3,
-    [0x25] = KEY_4,
-    [0x2E] = KEY_5,
-    [0x36] = KEY_6,
-    [0x3D] = KEY_7,
-    [0x3E] = KEY_8,
-    [0x46] = KEY_9,
-    [0x45] = KEY_0,
-    [0x4E] = KEY_MINUS,
-    [0x55] = KEY_EQUAL,
-    [0x66] = KEY_BACKSPACE,
-
-    // 其他符号。
-    [0x54] = KEY_LBRACKET,
-    [0x5B] = KEY_RBRACKET,
-    [0x5D] = KEY_BACKSLASH,
-    [0x4C] = KEY_SEMICOLON,
-    [0x52] = KEY_QUOTE,
-    [0x41] = KEY_COMMA,
-    [0x49] = KEY_PERIOD,
-    [0x4A] = KEY_SLASH,
-
-    // 控制键与功能键。
-    [0x5A] = KEY_ENTER,
-    [0x29] = KEY_SPACE,
-    [0x0D] = KEY_TAB,
-    [0x76] = KEY_ESC,
-    [0x58] = KEY_CAPS_LOCK,
-
-    // 左右融为一体的修饰键。
-    [0x12] = KEY_SHIFT,
-    [0x59] = KEY_SHIFT, // 左/右 Shift
-    [0x14] = KEY_CTRL,  // 左 Ctrl
-    [0x11] = KEY_ALT,   // 左 Alt
-
-    // F1 - F12
-    [0x05] = KEY_F1,
-    [0x06] = KEY_F2,
-    [0x04] = KEY_F3,
-    [0x0C] = KEY_F4,
-    [0x03] = KEY_F5,
-    [0x0B] = KEY_F6,
-    [0x83] = KEY_F7,
-    [0x0A] = KEY_F8,
-    [0x01] = KEY_F9,
-    [0x09] = KEY_F10,
-    [0x78] = KEY_F11,
-    [0x07] = KEY_F12,
-};
-
-// 扩展按键映射表（前缀为 0xE0 的按键）。
-static const KEY_CODE ExtendedMap[256] = {
-    [0x75] = KEY_UP,
-    [0x72] = KEY_DOWN,
-    [0x6B] = KEY_LEFT,
-    [0x74] = KEY_RIGHT,
-    [0x71] = KEY_DELETE,
-    [0x14] = KEY_CTRL, // 右 Ctrl
-    [0x11] = KEY_ALT,  // 右 Alt
-    [0x1F] = KEY_WIN,
-    [0x27] = KEY_WIN,   // 左/右 Win
-    [0x4A] = KEY_SLASH, // 小键盘 / 映射为普通 /
-    [0x5A] = KEY_ENTER, // 小键盘 Enter 映射为普通 Enter
-};
+static KEYBOARD_EVENT KeyboardBuffer[KEYBOARD_BUFFER_SIZE];
+static uint32_t BufferHead = 0;
+static uint32_t BufferTail = 0;
+static uint8_t PreviousModifierMask = 0;
+static uint8_t PreviousUsages[HID_BOOT_KEY_COUNT] = {0};
 
 /**
- * 中断处理逻辑。
+ * 清空键盘输入环形队列。
  */
+static void ClearKeyboardBuffer(void);
 
-// 没有参数的函数，匹配 HAL.h 里的 HandleInterrupt。
-static void KeyboardInterruptHandler(void)
-{
-    // 从硬件端口读取原始扫描码。
-    uint8_t scanCode = ReadHardwarePortByte(KEYBOARD_DATA_PORT);
-    KEY_CODE keyCode = KEY_NONE;
-    bool pressed = true;
+/**
+ * 清空上一次 HID 报告留下的按键状态。
+ */
+static void ClearHIDState(void);
 
-    // 微型状态机，解包变长硬件码。
-    switch (CurrentState)
-    {
-    case STATE_NORMAL:
-        if (scanCode == 0xE0)
-        {
-            CurrentState = STATE_EXTENDED;
-            goto done;
-        }
-        else if (scanCode == 0xF0)
-        {
-            CurrentState = STATE_EXPECT_BREAK;
-            goto done;
-        }
-        keyCode = NormalMap[scanCode];
-        pressed = true;
-        break;
+/**
+ * 把一个按键事件塞入环形队列。
+ */
+static bool PushKeyboardEvent(KEY_CODE key_code, bool pressed);
 
-    case STATE_EXPECT_BREAK:
-        keyCode = NormalMap[scanCode];
-        pressed = false;
-        CurrentState = STATE_NORMAL;
-        break;
+/**
+ * 判断某个 HID Usage 是否出现在 6 键数组中。
+ */
+static bool IsUsageInReport(uint8_t usage, const uint8_t *usages);
 
-    case STATE_EXTENDED:
-        if (scanCode == 0xF0)
-        {
-            CurrentState = STATE_EXTENDED_EXPECT_BREAK;
-            goto done;
-        }
-        keyCode = ExtendedMap[scanCode];
-        pressed = true;
-        CurrentState = STATE_NORMAL;
-        break;
+/**
+ * 判断指定 HID 修饰键位是否被按下。
+ */
+static bool IsModifierActive(uint8_t modifier_mask, uint8_t left_bit, uint8_t right_bit);
 
-    case STATE_EXTENDED_EXPECT_BREAK:
-        keyCode = ExtendedMap[scanCode];
-        pressed = false;
-        CurrentState = STATE_NORMAL;
-        break;
-    }
+/**
+ * 把 USB HID Keyboard Usage ID 映射成 EvOS 统一键码。
+ */
+static KEY_CODE GetKeyCodeFromHIDUsage(uint8_t usage);
 
-    // 如果成功解析出了按键，塞进环形缓冲区。
-    if (keyCode != KEY_NONE)
-    {
-        uint32_t nextHead = (BufferHead + 1) % KEYBOARD_BUFFER_SIZE;
-        // 如果队列没满，就往里写（满了就只能丢弃这个按键了，防止覆盖未读数据）。
-        if (nextHead != BufferTail)
-        {
-            KeyboardBuffer[BufferHead].KeyCode = keyCode;
-            KeyboardBuffer[BufferHead].Pressed = pressed;
-            BufferHead = nextHead;
-        }
-    }
-
-done:
-    return;
-}
-
-/* ================== 对外接口 ================== */
+/**
+ * 保存本次 HID 报告里的普通按键数组。
+ */
+static void CopyKeyboardUsages(const uint8_t *report);
 
 void InitKeyboard(void)
 {
-    // 清空缓冲区状态。
-    BufferHead = 0;
-    BufferTail = 0;
-    CurrentState = STATE_NORMAL;
+    ClearKeyboardBuffer();
+    ClearHIDState();
+}
 
-    kprintf("Buffer cleared.\n");
+void SubmitKeyboardEvent(KEY_CODE key_code, bool pressed)
+{
+    (void)PushKeyboardEvent(key_code, pressed);
+}
 
-    // 让 PS/2 控制器真的把键盘中断送出来。
-    InitKeyboardController();
+bool SubmitKeyboardHIDReport(const uint8_t *report, uint32_t size)
+{
+    if (report == NULL || size < HID_BOOT_REPORT_SIZE)
+        return false;
 
-    // 向 HAL 注册 33 号中断（IRQ1）的处理函数。
-    SetInterruptGate(33, KeyboardInterruptHandler);
-    SetHardwareInterrupt(1, 33);
+    uint8_t modifierMask = report[0];
+    const uint8_t *currentUsages = report + 2;
+
+    static const HID_MODIFIER_BINDING ModifierBindings[] = {
+        {KEY_CTRL, HID_MODIFIER_LEFT_CTRL, HID_MODIFIER_RIGHT_CTRL},
+        {KEY_SHIFT, HID_MODIFIER_LEFT_SHIFT, HID_MODIFIER_RIGHT_SHIFT},
+        {KEY_ALT, HID_MODIFIER_LEFT_ALT, HID_MODIFIER_RIGHT_ALT},
+        {KEY_WIN, HID_MODIFIER_LEFT_GUI, HID_MODIFIER_RIGHT_GUI},
+    };
+
+    for (uint32_t index = 0; index < sizeof(ModifierBindings) / sizeof(ModifierBindings[0]); index++)
+    {
+        bool wasPressed = IsModifierActive(
+            PreviousModifierMask,
+            ModifierBindings[index].LeftBit,
+            ModifierBindings[index].RightBit);
+        bool isPressed = IsModifierActive(
+            modifierMask,
+            ModifierBindings[index].LeftBit,
+            ModifierBindings[index].RightBit);
+
+        if (wasPressed != isPressed)
+            PushKeyboardEvent(ModifierBindings[index].KeyCode, isPressed);
+    }
+
+    for (uint32_t index = 0; index < HID_BOOT_KEY_COUNT; index++)
+    {
+        uint8_t usage = PreviousUsages[index];
+        if (usage == 0 || IsUsageInReport(usage, currentUsages))
+            continue;
+
+        PushKeyboardEvent(GetKeyCodeFromHIDUsage(usage), false);
+    }
+
+    for (uint32_t index = 0; index < HID_BOOT_KEY_COUNT; index++)
+    {
+        uint8_t usage = currentUsages[index];
+        if (usage == 0 || usage <= 0x03 || IsUsageInReport(usage, PreviousUsages))
+            continue;
+
+        PushKeyboardEvent(GetKeyCodeFromHIDUsage(usage), true);
+    }
+
+    PreviousModifierMask = modifierMask;
+    CopyKeyboardUsages(report);
+    return true;
 }
 
 bool ReadKeyboard(KEYBOARD_EVENT *event)
@@ -253,85 +143,168 @@ bool ReadKeyboard(KEYBOARD_EVENT *event)
     if (event == NULL)
         return false;
 
-    // 如果头尾指针相等，说明没有新按键
     if (BufferHead == BufferTail)
         return false;
-
-    // 关闭中断，防止在读取缓冲区的时候触发中断导致数据竞争
-    DisableInterrupts();
 
     *event = KeyboardBuffer[BufferTail];
     BufferTail = (BufferTail + 1) % KEYBOARD_BUFFER_SIZE;
 
-    EnableInterrupts();
-
     return true;
 }
 
-static bool WaitKeyboardRead(void)
+static void ClearKeyboardBuffer(void)
 {
-    for (uint32_t timeout = 0; timeout < 100000; timeout++)
-        if ((ReadHardwarePortByte(KEYBOARD_STATUS_PORT) & KEYBOARD_OUTPUT_READY) != 0)
-            return true;
-
-    return false;
-}
-
-static bool WaitKeyboardWrite(void)
-{
-    for (uint32_t timeout = 0; timeout < 100000; timeout++)
-        if ((ReadHardwarePortByte(KEYBOARD_STATUS_PORT) & KEYBOARD_INPUT_BUSY) == 0)
-            return true;
-
-    return false;
-}
-
-static bool ReadKeyboardControllerData(uint8_t *data)
-{
-    if (data == NULL || !WaitKeyboardRead())
-        return false;
-
-    *data = ReadHardwarePortByte(KEYBOARD_DATA_PORT);
-    return true;
-}
-
-static bool WriteKeyboardControllerCommand(uint8_t command)
-{
-    if (!WaitKeyboardWrite())
-        return false;
-
-    WriteHardwarePortByte(KEYBOARD_COMMAND_PORT, command);
-    return true;
-}
-
-static bool WriteKeyboardControllerData(uint8_t data)
-{
-    if (!WaitKeyboardWrite())
-        return false;
-
-    WriteHardwarePortByte(KEYBOARD_DATA_PORT, data);
-    return true;
-}
-
-static void InitKeyboardController(void)
-{
-    uint8_t config = 0;
-
-    WriteKeyboardControllerCommand(KEYBOARD_COMMAND_ENABLE_FIRST_PORT);
-
-    if (WriteKeyboardControllerCommand(KEYBOARD_COMMAND_READ_CONFIG) &&
-        ReadKeyboardControllerData(&config))
+    for (uint32_t index = 0; index < KEYBOARD_BUFFER_SIZE; index++)
     {
-        config |= KEYBOARD_CONFIG_FIRST_PORT_INTERRUPT;
-        config &= (uint8_t)~KEYBOARD_CONFIG_FIRST_PORT_CLOCK_DISABLED;
-        config &= (uint8_t)~KEYBOARD_CONFIG_TRANSLATION;
-
-        if (WriteKeyboardControllerCommand(KEYBOARD_COMMAND_WRITE_CONFIG))
-            WriteKeyboardControllerData(config);
+        KeyboardBuffer[index].KeyCode = KEY_NONE;
+        KeyboardBuffer[index].Pressed = false;
     }
 
-    WriteKeyboardControllerData(KEYBOARD_COMMAND_ENABLE_SCANNING);
+    BufferHead = 0;
+    BufferTail = 0;
+}
 
-    if (WaitKeyboardRead())
-        (void)ReadHardwarePortByte(KEYBOARD_DATA_PORT);
+static void ClearHIDState(void)
+{
+    PreviousModifierMask = 0;
+    memset(PreviousUsages, 0, sizeof(PreviousUsages));
+}
+
+static bool PushKeyboardEvent(KEY_CODE key_code, bool pressed)
+{
+    if (key_code == KEY_NONE || key_code >= KEY_MAX_COUNT)
+        return false;
+
+    uint32_t nextHead = (BufferHead + 1) % KEYBOARD_BUFFER_SIZE;
+    if (nextHead == BufferTail)
+        return false;
+
+    KeyboardBuffer[BufferHead].KeyCode = key_code;
+    KeyboardBuffer[BufferHead].Pressed = pressed;
+    BufferHead = nextHead;
+    return true;
+}
+
+static bool IsUsageInReport(uint8_t usage, const uint8_t *usages)
+{
+    if (usages == NULL)
+        return false;
+
+    for (uint32_t index = 0; index < HID_BOOT_KEY_COUNT; index++)
+        if (usages[index] == usage)
+            return true;
+
+    return false;
+}
+
+static bool IsModifierActive(uint8_t modifier_mask, uint8_t left_bit, uint8_t right_bit)
+{
+    uint8_t mask = (uint8_t)((1u << left_bit) | (1u << right_bit));
+    return (modifier_mask & mask) != 0;
+}
+
+static KEY_CODE GetKeyCodeFromHIDUsage(uint8_t usage)
+{
+    if (usage >= 0x04 && usage <= 0x1D)
+        return (KEY_CODE)(KEY_A + usage - 0x04);
+
+    switch (usage)
+    {
+    case 0x1E:
+        return KEY_1;
+    case 0x1F:
+        return KEY_2;
+    case 0x20:
+        return KEY_3;
+    case 0x21:
+        return KEY_4;
+    case 0x22:
+        return KEY_5;
+    case 0x23:
+        return KEY_6;
+    case 0x24:
+        return KEY_7;
+    case 0x25:
+        return KEY_8;
+    case 0x26:
+        return KEY_9;
+    case 0x27:
+        return KEY_0;
+    case 0x28:
+        return KEY_ENTER;
+    case 0x29:
+        return KEY_ESC;
+    case 0x2A:
+        return KEY_BACKSPACE;
+    case 0x2B:
+        return KEY_TAB;
+    case 0x2C:
+        return KEY_SPACE;
+    case 0x2D:
+        return KEY_MINUS;
+    case 0x2E:
+        return KEY_EQUAL;
+    case 0x2F:
+        return KEY_LBRACKET;
+    case 0x30:
+        return KEY_RBRACKET;
+    case 0x31:
+        return KEY_BACKSLASH;
+    case 0x33:
+        return KEY_SEMICOLON;
+    case 0x34:
+        return KEY_QUOTE;
+    case 0x35:
+        return KEY_GRAVE;
+    case 0x36:
+        return KEY_COMMA;
+    case 0x37:
+        return KEY_PERIOD;
+    case 0x38:
+        return KEY_SLASH;
+    case 0x39:
+        return KEY_CAPS_LOCK;
+    case 0x3A:
+        return KEY_F1;
+    case 0x3B:
+        return KEY_F2;
+    case 0x3C:
+        return KEY_F3;
+    case 0x3D:
+        return KEY_F4;
+    case 0x3E:
+        return KEY_F5;
+    case 0x3F:
+        return KEY_F6;
+    case 0x40:
+        return KEY_F7;
+    case 0x41:
+        return KEY_F8;
+    case 0x42:
+        return KEY_F9;
+    case 0x43:
+        return KEY_F10;
+    case 0x44:
+        return KEY_F11;
+    case 0x45:
+        return KEY_F12;
+    case 0x4C:
+        return KEY_DELETE;
+    case 0x4F:
+        return KEY_RIGHT;
+    case 0x50:
+        return KEY_LEFT;
+    case 0x51:
+        return KEY_DOWN;
+    case 0x52:
+        return KEY_UP;
+    default:
+        return KEY_NONE;
+    }
+}
+
+static void CopyKeyboardUsages(const uint8_t *report)
+{
+    for (uint32_t index = 0; index < HID_BOOT_KEY_COUNT; index++)
+        PreviousUsages[index] = report[index + 2];
 }

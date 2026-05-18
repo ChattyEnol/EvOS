@@ -152,7 +152,7 @@ ISR_NO_ERRORCODE 34  # xHCI。
 ISR_NO_ERRORCODE 255 # APIC Spurious Interrupt Vector.
 
 # 系统调用。
-# 马上写！
+ISR_NO_ERRORCODE 128 # INT 0x80.
 
 # 通用中断处理器。
 .align 16
@@ -177,6 +177,7 @@ ISR_NO_ERRORCODE 255 # APIC Spurious Interrupt Vector.
     # 从栈上获取参数（中断号在 pushed 中的第二个位置，错误码在第三个位置）。
     mov     120(%rsp), %rdi      # 第一参数：中断号。
     mov     128(%rsp), %rsi      # 第二参数：错误码。
+    mov     %rsp, %rdx           # 第三参数：保存后的完整中断帧。
 
     # 调用通用中断处理函数。
     call    CommonInterruptHandler
