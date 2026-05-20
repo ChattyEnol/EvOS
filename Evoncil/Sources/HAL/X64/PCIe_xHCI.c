@@ -1,15 +1,17 @@
-/** HAL/X64/xHCI.c
+/** HAL/X64/PCIe_xHCI.c
  *
  * (C) 2026 Charity Enol
  *
  * x64 平台的 xHCI 主控制器初始化与中断接入。
  */
 
-#include <Drivers/Keyboard.h>
 #include <HAL/HAL.h>
+#include <HAL/X64/Interrupt.h>
 #include <HAL/PCIe/PCIe.h>
 #include <HAL/PCIe/xHCI/xHCI.h>
+
 #include <Noyau/Memory.h>
+#include <Drivers/Keyboard.h>
 
 #include <stdbool.h>
 #include <stddef.h>

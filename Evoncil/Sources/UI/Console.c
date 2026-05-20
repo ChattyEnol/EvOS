@@ -6,12 +6,13 @@
  * 它只管欢迎页、提示符、命令缓冲和命令执行。
  */
 
-#include <Noyau/Memory.h>
-#include <Noyau/Process.h>
-#include <File/File.h>
 #include <HAL/HAL.h>
 #include <HAL/PCIe/PCIe.h>
 #include <HAL/PCIe/xHCI/xHCI.h>
+
+#include <Noyau/Memory.h>
+#include <Noyau/Process.h>
+#include <File/File.h>
 #include <UI/Console.h>
 #include <UI/TextIO.h>
 
@@ -120,9 +121,6 @@ static void PrintInfo(void)
     kprintf("Framebuffer: %p\n", (void *)(uintptr_t)CONSOLE_WORLD->Graphics.FrameBufferBase);
     kprintf("Free memory: %u KB\n", (unsigned int)(GetFreeMemorySize() / 1024));
     kprintf("Used memory: %u KB\n", (unsigned int)(GetUsedMemorySize() / 1024));
-    kprintf("Interrupt: %s\n", GetInterruptControllerName());
-    kprintf("PCIe config: %s\n", GetPCIeAccessName());
-    kprintf("xHCI: %s\n", IsXhciReady() ? "ready" : "not ready");
     kprintf("Processes: %u\n", GetProcessCount());
     kprintf("File system: %s\n", IsFileSystemReady() ? "FAT32" : "not mounted");
 }

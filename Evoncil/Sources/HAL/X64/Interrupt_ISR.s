@@ -1,4 +1,4 @@
-# HAL/X64/ISR.s
+# HAL/X64/Interrupt_ISR.s.s
 #
 # (C) Charity Enol
 #
@@ -148,7 +148,7 @@ ISR_ERRORCODE    21
 # 硬中断。
 ISR_NO_ERRORCODE 32  # 这啥中断啊？
 ISR_NO_ERRORCODE 33  # 键盘。
-ISR_NO_ERRORCODE 34  # xHCI。
+ISR_NO_ERRORCODE 34  # xHCI.
 ISR_NO_ERRORCODE 255 # APIC Spurious Interrupt Vector.
 
 # 系统调用。
@@ -175,12 +175,21 @@ ISR_NO_ERRORCODE 128 # INT 0x80.
     push    %r15
 
     # 从栈上获取参数（中断号在 pushed 中的第二个位置，错误码在第三个位置）。
-    mov     120(%rsp), %rdi      # 第一参数：中断号。
-    mov     128(%rsp), %rsi      # 第二参数：错误码。
-    mov     %rsp, %rdx           # 第三参数：保存后的完整中断帧。
+    mov     120(%rsp), %rcx      # 第一参数：中断号 `vector`。
+    mov     128(%rsp), %rdx      # 第二参数：错误码。
+    mov     %rsp, %r8            # 第三参数：保存后的完整中断帧。
 
+    # 清空方向标志位。
+    # cld
+
+    # 关键一步：为 Windows x64 呼叫约定分配 32 字节的影子空间，且保持 16 字节对齐
+    sub     $32, %rsp
+    
     # 调用通用中断处理函数。
     call    CommonInterruptHandler
+    
+    # 呼叫完毕，回收影子空间
+    add     $32, %rsp
 
     # 恢复所有通用寄存器。
     pop     %r15

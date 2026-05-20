@@ -1,4 +1,4 @@
-/** HAL/X64/APIC.c
+/** HAL/X64/Interrupt_APIC.c
  *
  * (C) Charity Enol
  *
@@ -6,6 +6,9 @@
  */
 
 #include <HAL/HAL.h>
+#include <HAL/X64/CPU.h>
+#include <HAL/X64/Registers.h>
+#include <HAL/X64/Interrupt.h>
 #include <Noyau/Memory.h>
 
 #include <stdbool.h>

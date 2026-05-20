@@ -6,6 +6,7 @@
  */
 
 #include <HAL/HAL.h>
+#include <HAL/X64/IO.h>
 
 uint8_t ReadHardwarePortByte(uint16_t port)
 {

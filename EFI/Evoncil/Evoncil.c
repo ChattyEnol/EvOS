@@ -25,7 +25,7 @@ EFI_STATUS EFIAPI EvStub(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     SystemTable->BootServices->GetMemoryMap(
         &world->Memory.MemoryMapSize, // 第一次试探，我们来当 0。
         NULL,                         // 不能真放了，真放了就真变 0 了。
-        /* 下面的第一次暂时不管。 */
+        // 下面的第一次暂时不管。
         &world->Memory.MapKey,
         &world->Memory.DescriptorSize,
         &world->Memory.DescriptorVersion);

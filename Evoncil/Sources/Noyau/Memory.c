@@ -6,8 +6,8 @@
  * 虚拟页用线性递增的内核空间。
  */
 
-#include <Noyau/Memory.h>
 #include <HAL/HAL.h>
+#include <Noyau/Memory.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -253,7 +253,10 @@ void InitMemory(MEMORY *memory)
 
     MergeFreeMemoryRegions();
 
-    uint64_t *oldPageMapLevel4 = (uint64_t *)GetPageTableRoot();
+    // 在 x64 模式下，CR3 的低 12 位包含标志位（如 PCID、PWT、PCD）。
+    // 如果 UEFI 开启了这些标志位，`oldPageMapLevel4` 就不再是一个纯粹的物理地址指针，
+    // 直接对其进行 memcpy 会导致非法内存访问，在 IDT 初始化前这会直接触发 Triple Fault 重启。
+    uint64_t *oldPageMapLevel4 = (uint64_t *)((uint64_t)GetPageTableRoot() & PAGE_MASK);
 
     PAGE_MAP_LEVEL_4 = AllocatePhysicalPage();
     if (PAGE_MAP_LEVEL_4 == NULL)
@@ -278,12 +281,10 @@ void *MapDeviceMemory(uint64_t physical_address, uint64_t size)
     NEXT_DEVICE_VIRTUAL_ADDRESS += mapSize;
 
     for (uint64_t index = 0; index < pageCount; index++)
-    {
         MapSinglePage(
             virtualBase + index * PAGE_SIZE,
             physicalBase + index * PAGE_SIZE,
             PAGE_PRESENT | PAGE_READWRITE | PAGE_CACHE_DISABLE | PAGE_GLOBAL);
-    }
 
     return (void *)(virtualBase + offset);
 }

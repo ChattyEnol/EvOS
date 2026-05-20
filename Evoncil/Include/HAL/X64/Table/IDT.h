@@ -1,4 +1,4 @@
-/** Hal/X64/IDT.h
+/** Hal/X64/Table_IDT.h
  *
  * (C) Charity Enol
  *
@@ -7,8 +7,8 @@
  * Intel® 64 and IA-32 Architectures Software Developer’s Manual.
  */
 
-#ifndef HAL_X64_IDT_H
-#define HAL_X64_IDT_H
+#ifndef HAL_X64_TABLE_IDT_H
+#define HAL_X64_TABLE_IDT_H
 
 #include <stdint.h>
 
@@ -48,16 +48,16 @@
 typedef struct
 {
     uint16_t Offset_15_0;  // 偏移地址低 16 位。
-    uint16_t Selector;     // 代码段选择器
+    uint16_t Selector;     // 代码段选择器。
     uint8_t IST;           // 中断栈表索引，只有 3bit，取值 0 ~ 7！
     uint8_t P_DPL_0_Type;  // 门类型和标志位，比特数分别为 1 + 2 + 1 + 4。
     uint16_t Offset_31_16; // 偏移地址中 16 位。
     uint32_t Offset_63_32; // 偏移地址高 32 位。
     uint32_t Reserved;     // 保留字段。
-} __attribute__((packed)) IDT_GATE_DESCRIPTOR;
+} __attribute__((packed)) IDT_DESCRIPTOR;
 
 /**
- * AMD64 里有个专门的寄存器，叫做 IDTR。
+ * X64 里有个专门的寄存器，叫做 IDTR。
  * 这个结构体里的东西就是这个寄存器的镜像。
  * 依旧，第一个成员变量是最低字节。
  */
@@ -67,7 +67,7 @@ typedef struct
     uint64_t BaseAddress; // IDT 基地址
 } __attribute__((packed)) IDT_REGISTER;
 
-// 写 AMD64 的 IDT 寄存器。
-static inline void WriteIDTR(IDT_REGISTER *idtr);
+// 写 IDT 寄存器。
+static inline void WriteIDTR(IDT_REGISTER *idtr) { __asm__ volatile("lidt (%0)" ::"r"(idtr)); }
 
 #endif

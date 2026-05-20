@@ -5,13 +5,13 @@
 
 #include <World/World.h>
 #include <HAL/HAL.h>
+// #include <HAL/PCIe/PCIe.h>
+// #include <HAL/PCIe/xHCI/xHCI.h>
 #include <Noyau/Memory.h>
 #include <Noyau/Process.h>
-#include <File/File.h>
 #include <Drivers/Graphics.h>
 #include <Drivers/Keyboard.h>
-#include <HAL/PCIe/PCIe.h>
-#include <HAL/PCIe/xHCI/xHCI.h>
+#include <File/File.h>
 #include <UI/TextIO.h>
 #include <UI/Console.h>
 
@@ -21,12 +21,15 @@ void Evoncil(WORLD *world)
 {
     InitMemory(&world->Memory);
     InitGraphics(&world->Graphics);
-    InitInterrupt(world);
-    InitPCIe(world->AcpiRoot);
+    InitHardware(world);
     InitProcess();
     InitFile();
     InitKeyboard();
-    InitXhci();
+    // StopEvoncil();
+    /**
+     * 问题在这里，只要在它之前 Stop 掉电脑就不会重启。
+     * 看来中断没有处理好。
+     */
     EnableInterrupts();
 
     DrawScreen(COLOR_EVONCIL);

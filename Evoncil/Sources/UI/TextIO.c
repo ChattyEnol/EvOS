@@ -6,6 +6,8 @@
  * 这层知道字体，也知道光标，但尽量别管“命令该怎么执行”。
  */
 
+#include <HAL/HAL.h>
+
 #include <UI/TextIO.h>
 #include <UI/Font.h>
 
