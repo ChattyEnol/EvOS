@@ -1,4 +1,4 @@
-/** Noyau/Syscall.c
+/** Noyau/Enolcall.c
  *
  * (C) Charity Enol
  *
@@ -6,7 +6,7 @@
  */
 
 #include <Noyau/Process.h>
-#include <Noyau/Syscall.h>
+#include <Noyau/Enolcall.h>
 #include <UI/TextIO.h>
 
 #include <stddef.h>
@@ -52,21 +52,21 @@ uint64_t EnolCaller(INTERRUPT_FRAME *frame)
 
     int64_t result;
 
-    switch ((ENOL_SYSCALL_NUMBER)frame->RAX)
+    switch ((ENOLCALL_NUMBER)frame->RAX)
     {
-    case ENOL_SYS_READ:
+    case ENOL_READ:
         result = SysRead((int)frame->RDI, (void *)(uintptr_t)frame->RSI, frame->RDX);
         break;
-    case ENOL_SYS_WRITE:
+    case ENOL_WRITE:
         result = SysWrite((int)frame->RDI, (const void *)(uintptr_t)frame->RSI, frame->RDX);
         break;
-    case ENOL_SYS_YIELD:
+    case ENOL_YIELD:
         result = SysYield();
         break;
-    case ENOL_SYS_GETPID:
+    case ENOL_GETPID:
         result = SysGetPID();
         break;
-    case ENOL_SYS_EXIT:
+    case ENOL_EXIT:
         result = SysExit((int)frame->RDI);
         break;
     default:

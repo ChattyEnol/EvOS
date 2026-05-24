@@ -8,6 +8,8 @@
 #include <HAL/HAL.h>
 #include <HAL/X64/Registers.h>
 
+#include <UI/TextIO.h>
+
 uint64_t ReadMSR(uint32_t msr_id)
 {
     uint32_t low, high;

@@ -67,7 +67,11 @@ typedef struct
     uint64_t BaseAddress; // IDT 基地址
 } __attribute__((packed)) IDT_REGISTER;
 
-// 写 IDT 寄存器。
-static inline void WriteIDTR(IDT_REGISTER *idtr) { __asm__ volatile("lidt (%0)" ::"r"(idtr)); }
+/**
+ * 初始化 IDT 表。
+ * 先全部清零，
+ * 然后把 IDTR（寄存器）指向这个表的基址。
+ */
+void InitIDT(void);
 
 #endif

@@ -21,6 +21,7 @@
 
 void InitHardware(WORLD *); // 全局初始化。
 void Halt(void);            // 停顿。
+void Pause(void);           // 暂停（让出 CPU 时间片）。
 
 /**
  * 内存管理部分的硬件操作封装。
@@ -37,40 +38,17 @@ void FlushTLB(void);
  * 平台各异，因此要参考 `HAL/<PLATFORM>/` 下的东西。
  */
 
-void EnableInterrupts(void);                          // 开启全局中断标志位（IF）。
-void DisableInterrupts(void);                         // 关闭全局中断标志位（IF）。
-void SetInterruptGate(uint8_t vector, void *handler); // 将特定的处理程序绑定到特定的中断向量号上。
-void SetHardwareInterrupt(uint8_t irq, uint8_t vector);
-void SendEndOfInterrupt(void);
+void EnableInterrupts(void);                             // 开中断。
+void DisableInterrupts(void);                            // 关中断。
+void SetInterruptHandler(uint8_t vector, void *handler); // 绑定某个中断号的处理程序。
+void SetHardwareVector(uint8_t irq, uint8_t vector);     // 将某个硬件中断号绑定到某个中断向量上。
 
-// 汇编中断入口保存下来的通用寄存器和硬件栈帧。
-// EnolCaller 会直接修改这里的 RAX，把系统调用返回值带回去。
-typedef struct
-{
-    uint64_t R15;
-    uint64_t R14;
-    uint64_t R13;
-    uint64_t R12;
-    uint64_t R11;
-    uint64_t R10;
-    uint64_t R9;
-    uint64_t R8;
-    uint64_t RDI;
-    uint64_t RSI;
-    uint64_t RBP;
-    uint64_t RBX;
-    uint64_t RDX;
-    uint64_t RCX;
-    uint64_t RAX;
-    uint64_t Vector;
-    uint64_t ErrorCode;
-    uint64_t RIP;
-    uint64_t CS;
-    uint64_t RFLAGS;
-    uint64_t RSP;
-    uint64_t SS;
-} INTERRUPT_FRAME;
+/**
+ * Hypervisor 平台相关的函数。
+ */
 
-typedef void (*HandleInterrupt)(void); // 中断处理函数原型。
+void SetupHypervisor(uint64_t message_address, uint64_t event_address); // 配置虚拟化通信内存
+uint64_t Hypercall(uint64_t code, uint64_t param);                      // 发起虚拟机呼叫
+void AckHyperMessage(void);                                             // 告诉宿主机当前消息已处理完毕，请清理槽位并重置通知线
 
 #endif // HAL_HAL_H

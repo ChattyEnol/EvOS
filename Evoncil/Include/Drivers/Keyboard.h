@@ -114,7 +114,7 @@ typedef enum
     KEY_MAX_COUNT
 } KEY_CODE;
 
-// 键盘按键事件结构体。
+// 键盘按键事件。
 typedef struct
 {
     KEY_CODE KeyCode; // 转换后的键码。
@@ -132,14 +132,6 @@ void InitKeyboard(void);
  * 这个接口主要留给未来更复杂的 HID 解析器或虚拟输入设备使用。
  */
 void SubmitKeyboardEvent(KEY_CODE key_code, bool pressed);
-
-/**
- * 解析 USB HID Boot Keyboard Report 并提交按键变化。
- * @param report 指向 8 字节 Boot Keyboard Report 的缓冲区。
- * @param size 缓冲区大小，至少需要 8 字节。
- * @return bool 成功解析返回 true，参数错误返回 false。
- */
-bool SubmitKeyboardHIDReport(const uint8_t *report, uint32_t size);
 
 /**
  * 从键盘缓冲区中异步读取一个按键事件

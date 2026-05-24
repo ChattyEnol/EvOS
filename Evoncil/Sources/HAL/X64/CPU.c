@@ -14,18 +14,19 @@
 #include <HAL/X64/Table/GDT.h>
 #include <HAL/X64/Table/IDT.h>
 
-#include <HAL/PCIe/PCIe.h>
-#include <HAL/PCIe/xHCI/xHCI.h>
+// #include <HAL/PCIe/PCIe.h>
+// #include <HAL/PCIe/xHCI/xHCI.h>
 
 void InitHardware(WORLD *world)
 {
     InitGDT();
     InitInterrupt(world->AcpiRoot);
-    InitPCIe(world->AcpiRoot);
-    InitXhci();
+    // InitPCIe(world->AcpiRoot);
+    // InitXhci();
 }
 
 void Halt(void) { __asm__ volatile("hlt"); }
+void Pause(void) { __asm__ volatile("pause"); }
 
 void ReadCPUID(
     uint32_t leaf,

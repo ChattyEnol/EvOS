@@ -42,7 +42,7 @@ void InitProcess(void)
         CURRENT_PROCESS_INDEX = (uint32_t)GetProcessIndex(CURRENT_PROCESS);
     }
 
-    SetInterruptGate(32, ProcessTimerInterruptHandler);
+    SetInterruptHandler(32, ProcessTimerInterruptHandler);
 }
 
 PROCESS_ID CreateProcess(const char *name, PROCESS_ENTRY entry, void *context)

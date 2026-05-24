@@ -7,8 +7,8 @@
  */
 
 #include <HAL/HAL.h>
-#include <HAL/PCIe/PCIe.h>
-#include <HAL/PCIe/xHCI/xHCI.h>
+// #include <HAL/PCIe/PCIe.h>
+// #include <HAL/PCIe/xHCI/xHCI.h>
 
 #include <Noyau/Memory.h>
 #include <Noyau/Process.h>
@@ -32,7 +32,6 @@ static void PrintHelp(void);
 static void PrintInfo(void);
 static void PrintProcess(void);
 static void PrintFileSystem(void);
-static void PrintXhci(void);
 static void ClearConsole(void);
 static bool ExecuteCommand(void);
 static void AppendCommandCharacter(char character);
@@ -150,29 +149,6 @@ static void PrintFileSystem(void)
     kprintf("Root cluster: %u\n", volume->RootCluster);
 }
 
-static void PrintXhci(void)
-{
-    const XHCI_CONTROLLER *controller = GetXhciController();
-
-    if (!IsXhciReady())
-    {
-        kprintf("xHCI not ready.\n");
-        return;
-    }
-
-    kprintf("xHCI ready.\n");
-    kprintf("PCI: %u:%u.%u\n",
-            controller->PciDevice.Bus,
-            controller->PciDevice.Device,
-            controller->PciDevice.Function);
-    kprintf("Vendor: %x Device: %x\n",
-            controller->PciDevice.VendorId,
-            controller->PciDevice.DeviceId);
-    kprintf("Ports: %u Slots: %u\n",
-            controller->MaxPorts,
-            controller->MaxSlots);
-}
-
 static void ClearConsole(void)
 {
     DrawScreen(COLOR_EVONCIL);
@@ -217,12 +193,6 @@ static bool ExecuteCommand(void)
     if (CommandEquals("fs"))
     {
         PrintFileSystem();
-        return true;
-    }
-
-    if (CommandEquals("xhci"))
-    {
-        PrintXhci();
         return true;
     }
 

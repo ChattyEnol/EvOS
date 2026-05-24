@@ -38,6 +38,7 @@ $stub_source = @(
 
 $sources = @(
     "./*.c",
+    "./Sources/HAL/*.c",
     "./Sources/HAL/$platform/*.c",
     "./Sources/HAL/$platform/*.s",
     "./Sources/Noyau/*.c",

@@ -5,15 +5,17 @@
 
 #include <World/World.h>
 #include <HAL/HAL.h>
-// #include <HAL/PCIe/PCIe.h>
-// #include <HAL/PCIe/xHCI/xHCI.h>
 #include <Noyau/Memory.h>
 #include <Noyau/Process.h>
 #include <Drivers/Graphics.h>
+#include <Drivers/VM/VMBus.h>
+#include <Drivers/VM/VM_Keyboard.h>
 #include <Drivers/Keyboard.h>
 #include <File/File.h>
 #include <UI/TextIO.h>
 #include <UI/Console.h>
+
+int64_t EVOS_STATUS = 0;
 
 static void StopEvoncil(void);
 
@@ -24,13 +26,12 @@ void Evoncil(WORLD *world)
     InitHardware(world);
     InitProcess();
     InitFile();
-    InitKeyboard();
-    // StopEvoncil();
-    /**
-     * 问题在这里，只要在它之前 Stop 掉电脑就不会重启。
-     * 看来中断没有处理好。
-     */
+
     EnableInterrupts();
+    
+    InitVMBus();
+    InitVMKeyboard();
+    InitKeyboard();
 
     DrawScreen(COLOR_EVONCIL);
     InitConsole(world);
