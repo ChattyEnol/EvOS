@@ -1,3 +1,11 @@
+/** World/Memory.h
+ * 
+ * (C) Charity Enol
+ * 
+ * 这里是 `MEMORY` 结构体，世界树的内存枝桠。
+ * 包含了 UEFI 的内存遗产。
+ */
+
 #ifndef MEMORY_H
 #define MEMORY_H
 

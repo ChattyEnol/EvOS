@@ -3,6 +3,8 @@
  * (C) Charity Enol
  *
  * Hyper-V VMBus 总线控制与通道 Ring Buffer 实现。
+ * 这个部分非常复杂，
+ * 我参考了很多 Linux 源码中微软自己提交的 `hv` 驱动。
  */
 
 #include <Drivers/VM/VMBus.h>
@@ -197,20 +199,23 @@ static volatile bool OpenChannelReceived = false;
 static volatile uint32_t LastGpadlStatus = 0;
 static volatile uint32_t LastOpenStatus = 0;
 
-static void InterruptHandler(void);                                       // SynIC 中断处理函数。
-static bool PostMessage(const void *payload, uint32_t size);              // 向宿主机发送 VMBus 控制消息。
-static void NotifyHost(uint32_t channel_id);                              // 向宿主机发送某个通道的事件通知。
-static void ProcessControlMessage(volatile HV_MESSAGE *message);          // 处理 SynIC 消息页中的控制消息。
-static void ProcessEventFlags(void);                                      // 处理通道事件位图。
-static void SaveOfferedChannel(const VMBUS_CHANNEL_OFFER_CHANNEL *offer); // 记录宿主机提供的一个通道。
-static bool WaitForFlag(volatile bool *flag);                             // 等待某个异步标志变成 true。
-static bool GuidEquals(const VMBUS_GUID *left, const VMBUS_GUID *right);  // 比较两个 VMBus GUID。
-static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel);            // 计算环形缓冲区真实可用的数据区大小。
-// 往环形缓冲区写入任意字节序列。
-static uint32_t CopyToRing(VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t offset, const void *buffer, uint32_t size);
-// 从环形缓冲区读取任意字节序列。
-static uint32_t CopyFromRing(const VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t offset, void *buffer, uint32_t size);
-static uint32_t Align8(uint32_t value); // 对齐到 8 字节边界。
+static void InterruptHandler(void);                              // SynIC 中断处理函数。
+static bool PostMessage(const void *payload, uint32_t size);     // 向宿主机发送 VMBus 控制消息。
+static bool WaitForFlag(volatile bool *flag);                    // 等待某个异步标志变成 true。
+static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel);   // 计算环形缓冲区真实可用的数据区大小。
+
+static uint32_t CopyToRing( // 往环形缓冲区写入任意字节序列。
+    VMBUS_RING_BUFFER *ring,
+    uint32_t data_size,
+    uint32_t offset,
+    const void *buffer,
+    uint32_t size);
+static uint32_t CopyFromRing( // 从环形缓冲区读取任意字节序列。
+    const VMBUS_RING_BUFFER *ring,
+    uint32_t data_size,
+    uint32_t offset,
+    void *buffer,
+    uint32_t size);
 
 void InitVMBus(void)
 {
@@ -308,7 +313,11 @@ bool VMBusOpenChannel(uint32_t channel_id, uint32_t buffer_size, void (*callback
 
     GpadlCreatedReceived = false;
     LastGpadlStatus = 0xFFFFFFFFu;
-    if (!PostMessage(&gpadl, sizeof(VMBUS_CHANNEL_GPADL_HEADER) - sizeof(gpadl.Range.PfnArray) + totalPageCount * sizeof(uint64_t)))
+    if (!PostMessage(
+            &gpadl, sizeof(VMBUS_CHANNEL_GPADL_HEADER) -
+                        sizeof(gpadl.Range.PfnArray) +
+                        totalPageCount *
+                            sizeof(uint64_t)))
         return false;
 
     if (!WaitForFlag(&GpadlCreatedReceived) || LastGpadlStatus != 0)
@@ -338,9 +347,7 @@ bool VMBusOpenChannel(uint32_t channel_id, uint32_t buffer_size, void (*callback
 void VMBusWriteChannel(uint32_t channel_id, const void *buffer, uint32_t size)
 {
     (void)VMBusSendPacket(
-        channel_id,
-        buffer,
-        size,
+        channel_id, buffer, size,
         (uint64_t)(uintptr_t)buffer,
         VMBUS_PACKET_DATA_INBAND,
         0);
@@ -354,7 +361,7 @@ bool VMBusFindChannelByGuid(const VMBUS_GUID *guid, uint32_t *channel_id)
     for (uint32_t index = 0; index < VMBUS_MAX_CHANNELS; index++)
     {
         if (VMBusChannels[index].Offered &&
-            GuidEquals(&VMBusChannels[index].DeviceGuid, guid))
+            memcmp(&VMBusChannels[index].DeviceGuid, guid, sizeof(VMBUS_GUID)) == 0)
         {
             *channel_id = index;
             return true;
@@ -380,13 +387,14 @@ bool VMBusSendPacket(
         return false;
 
     uint32_t dataSize = GetRingDataSize(channel);
-    uint32_t packetSize = Align8(sizeof(VMBUS_PACKET_DESCRIPTOR) + size);
+    uint32_t packetSize = (sizeof(VMBUS_PACKET_DESCRIPTOR) + size + 7u) & ~7u; // 对齐到 8 字节边界。
     uint32_t totalSize = packetSize + sizeof(uint64_t);
     VMBUS_RING_BUFFER *ring = channel->OutboundBuffer;
 
     uint32_t readIndex = ring->ReadIndex;
     uint32_t writeIndex = ring->WriteIndex;
-    uint32_t used = writeIndex >= readIndex ? writeIndex - readIndex : dataSize - readIndex + writeIndex;
+    uint32_t used = writeIndex >= readIndex ? writeIndex - readIndex
+                                            : dataSize - readIndex + writeIndex;
     if (dataSize - used <= totalSize)
         return false;
 
@@ -409,7 +417,16 @@ bool VMBusSendPacket(
     next = CopyToRing(ring, dataSize, next, &previousIndices, sizeof(previousIndices));
     ring->WriteIndex = next;
 
-    NotifyHost(channel_id);
+    if (channel_id >= VMBUS_MAX_CHANNELS)
+        return;
+    VMBUS_CHANNEL *channel = &VMBusChannels[channel_id];
+    if (!channel->Offered)
+        return;
+
+    (void)Hypercall(
+        HVCALL_SIGNAL_EVENT | HV_HYPERCALL_FAST_BIT,
+        channel->ConnectionId != 0 ? channel->ConnectionId
+                                   : VMBUS_EVENT_CONNECTION_ID);
     return true;
 }
 
@@ -444,7 +461,8 @@ bool VMBusReadPacket(
         return false;
 
     uint32_t payloadSize = packetSize - payloadOffset;
-    (void)CopyFromRing(ring, dataSize, (readIndex + payloadOffset) % dataSize, buffer, payloadSize);
+    (void)CopyFromRing(ring, dataSize,
+                       (readIndex + payloadOffset) % dataSize, buffer, payloadSize);
 
     ring->ReadIndex = (readIndex + packetSize + sizeof(uint64_t)) % dataSize;
 
@@ -459,90 +477,66 @@ bool VMBusReadPacket(
 static void InterruptHandler(void)
 {
     volatile HV_MESSAGE *message =
-        (volatile HV_MESSAGE *)((uint8_t *)VMBusMessagePage + HV_MESSAGE_SIZE * HV_MESSAGE_SINT);
+        (volatile HV_MESSAGE *)((uint8_t *)VMBusMessagePage +
+                                HV_MESSAGE_SIZE * HV_MESSAGE_SINT);
 
     if (message->MessageType != 0)
-        ProcessControlMessage(message);
-
-    ProcessEventFlags();
-}
-
-static bool PostMessage(const void *payload, uint32_t size)
-{
-    if (VMBusPostPage == NULL || payload == NULL || size > HV_MESSAGE_PAYLOAD_SIZE)
-        return false;
-
-    HV_POST_MESSAGE_INPUT *input = (HV_POST_MESSAGE_INPUT *)VMBusPostPage;
-    memset(input, 0, sizeof(*input));
-    input->ConnectionId = VMBusMessageConnectionId;
-    input->MessageType = 1;
-    input->PayloadSize = size;
-    memcpy(input->Payload, payload, size);
-
-    return Hypercall(HVCALL_POST_MESSAGE, GetPhysicalAddress(VMBusPostPage)) == HV_STATUS_SUCCESS;
-}
-
-static void NotifyHost(uint32_t channel_id)
-{
-    if (channel_id >= VMBUS_MAX_CHANNELS)
-        return;
-
-    VMBUS_CHANNEL *channel = &VMBusChannels[channel_id];
-    if (!channel->Offered)
-        return;
-
-    (void)Hypercall(
-        HVCALL_SIGNAL_EVENT | HV_HYPERCALL_FAST_BIT,
-        channel->ConnectionId != 0 ? channel->ConnectionId : VMBUS_EVENT_CONNECTION_ID);
-}
-
-static void ProcessControlMessage(volatile HV_MESSAGE *message)
-{
-    VMBUS_MESSAGE_HEADER *header = (VMBUS_MESSAGE_HEADER *)message->Payload;
-
-    switch (header->MessageType)
     {
-    case VMBUS_MSG_VERSION_RESPONSE:
-    {
-        VMBUS_CHANNEL_VERSION_RESPONSE *response = (VMBUS_CHANNEL_VERSION_RESPONSE *)message->Payload;
-        if (response->MessageConnectionId != 0)
-            VMBusMessageConnectionId = response->MessageConnectionId;
-        ContactResponseReceived = response->VersionSupported != 0;
-        break;
-    }
-    case VMBUS_MSG_OFFER_CHANNEL:
-        SaveOfferedChannel((const VMBUS_CHANNEL_OFFER_CHANNEL *)message->Payload);
-        break;
-    case VMBUS_MSG_ALL_OFFERS_DELIVERED:
-        OffersDeliveredReceived = true;
-        break;
-    case VMBUS_MSG_GPADL_CREATED:
-    {
-        VMBUS_CHANNEL_GPADL_CREATED *created = (VMBUS_CHANNEL_GPADL_CREATED *)message->Payload;
-        LastGpadlStatus = created->CreationStatus;
-        GpadlCreatedReceived = true;
-        break;
-    }
-    case VMBUS_MSG_OPEN_CHANNEL_RESULT:
-    {
-        VMBUS_CHANNEL_OPEN_RESULT *result = (VMBUS_CHANNEL_OPEN_RESULT *)message->Payload;
-        LastOpenStatus = result->Status;
-        OpenChannelReceived = true;
-        break;
-    }
-    default:
-        break;
+        VMBUS_MESSAGE_HEADER *header = (VMBUS_MESSAGE_HEADER *)message->Payload;
+
+        switch (header->MessageType)
+        {
+        case VMBUS_MSG_VERSION_RESPONSE:
+        {
+            VMBUS_CHANNEL_VERSION_RESPONSE *response =
+                (VMBUS_CHANNEL_VERSION_RESPONSE *)message->Payload;
+            if (response->MessageConnectionId != 0)
+                VMBusMessageConnectionId = response->MessageConnectionId;
+            ContactResponseReceived = response->VersionSupported != 0;
+            break;
+        }
+        case VMBUS_MSG_OFFER_CHANNEL:
+            const VMBUS_CHANNEL_OFFER_CHANNEL *offer =
+                (const VMBUS_CHANNEL_OFFER_CHANNEL *)message->Payload;
+            if (offer == NULL || offer->ChildRelId >= VMBUS_MAX_CHANNELS)
+                break;
+            VMBUS_CHANNEL *channel = &VMBusChannels[offer->ChildRelId];
+            memset(channel, 0, sizeof(*channel));
+            channel->ChannelId = offer->ChildRelId;
+            channel->DeviceGuid = offer->Offer.InterfaceType;
+            channel->ConnectionId = offer->ConnectionId;
+            channel->Offered = true;
+            break;
+        case VMBUS_MSG_ALL_OFFERS_DELIVERED:
+            OffersDeliveredReceived = true;
+            break;
+        case VMBUS_MSG_GPADL_CREATED:
+        {
+            VMBUS_CHANNEL_GPADL_CREATED *created =
+                (VMBUS_CHANNEL_GPADL_CREATED *)message->Payload;
+            LastGpadlStatus = created->CreationStatus;
+            GpadlCreatedReceived = true;
+            break;
+        }
+        case VMBUS_MSG_OPEN_CHANNEL_RESULT:
+        {
+            VMBUS_CHANNEL_OPEN_RESULT *result =
+                (VMBUS_CHANNEL_OPEN_RESULT *)message->Payload;
+            LastOpenStatus = result->Status;
+            OpenChannelReceived = true;
+            break;
+        }
+        default:
+            break;
+        }
+
+        uint32_t oldType = message->MessageType;
+        message->MessageType = 0;
+
+        if ((message->MessageFlags & 1u) != 0 || oldType != 0)
+            AckHyperMessage();
     }
 
-    uint32_t oldType = message->MessageType;
-    message->MessageType = 0;
-
-    if ((message->MessageFlags & 1u) != 0 || oldType != 0)
-        AckHyperMessage();
-}
-
-static void ProcessEventFlags(void)
-{
     volatile uint64_t *eventBits =
         (volatile uint64_t *)((uint8_t *)VMBusEventPage + HV_MESSAGE_SIZE * HV_MESSAGE_SINT);
 
@@ -559,17 +553,20 @@ static void ProcessEventFlags(void)
     }
 }
 
-static void SaveOfferedChannel(const VMBUS_CHANNEL_OFFER_CHANNEL *offer)
+static bool PostMessage(const void *payload, uint32_t size)
 {
-    if (offer == NULL || offer->ChildRelId >= VMBUS_MAX_CHANNELS)
-        return;
+    if (VMBusPostPage == NULL || payload == NULL || size > HV_MESSAGE_PAYLOAD_SIZE)
+        return false;
 
-    VMBUS_CHANNEL *channel = &VMBusChannels[offer->ChildRelId];
-    memset(channel, 0, sizeof(*channel));
-    channel->ChannelId = offer->ChildRelId;
-    channel->DeviceGuid = offer->Offer.InterfaceType;
-    channel->ConnectionId = offer->ConnectionId;
-    channel->Offered = true;
+    HV_POST_MESSAGE_INPUT *input = (HV_POST_MESSAGE_INPUT *)VMBusPostPage;
+    memset(input, 0, sizeof(*input));
+    input->ConnectionId = VMBusMessageConnectionId;
+    input->MessageType = 1;
+    input->PayloadSize = size;
+    memcpy(input->Payload, payload, size);
+
+    return Hypercall(HVCALL_POST_MESSAGE,
+                     GetPhysicalAddress(VMBusPostPage)) == HV_STATUS_SUCCESS;
 }
 
 static bool WaitForFlag(volatile bool *flag)
@@ -584,11 +581,6 @@ static bool WaitForFlag(volatile bool *flag)
     return false;
 }
 
-static bool GuidEquals(const VMBUS_GUID *left, const VMBUS_GUID *right)
-{
-    return memcmp(left, right, sizeof(VMBUS_GUID)) == 0;
-}
-
 static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel)
 {
     if (channel == NULL || channel->RingBufferSize <= PAGE_SIZE)
@@ -597,7 +589,12 @@ static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel)
     return channel->RingBufferSize - PAGE_SIZE;
 }
 
-static uint32_t CopyToRing(VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t offset, const void *buffer, uint32_t size)
+static uint32_t CopyToRing(
+    VMBUS_RING_BUFFER *ring,
+    uint32_t data_size,
+    uint32_t offset,
+    const void *buffer,
+    uint32_t size)
 {
     const uint8_t *source = (const uint8_t *)buffer;
 
@@ -610,7 +607,12 @@ static uint32_t CopyToRing(VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t
     return offset;
 }
 
-static uint32_t CopyFromRing(const VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t offset, void *buffer, uint32_t size)
+static uint32_t CopyFromRing(
+    const VMBUS_RING_BUFFER *ring,
+    uint32_t data_size,
+    uint32_t offset,
+    void *buffer,
+    uint32_t size)
 {
     uint8_t *target = (uint8_t *)buffer;
 
@@ -621,9 +623,4 @@ static uint32_t CopyFromRing(const VMBUS_RING_BUFFER *ring, uint32_t data_size, 
     }
 
     return offset;
-}
-
-static uint32_t Align8(uint32_t value)
-{
-    return (value + 7u) & ~7u;
 }
