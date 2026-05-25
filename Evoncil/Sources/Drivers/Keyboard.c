@@ -1,6 +1,6 @@
 /** Drivers/Keyboard.c
  *
- * (C) 2026 Charity Enol
+ * (C) Charity Enol
  *
  * 核心输入环形队列实现，不含任何总线特化逻辑。
  */
@@ -27,7 +27,7 @@ void SubmitKeyboardEvent(KEY_CODE key_code, bool pressed)
 
     uint32_t next_head = (BufferHead + 1) % KEYBOARD_BUFFER_SIZE;
 
-    // 如果队列满了，就暂时丢弃新事件防止缓冲区溢出
+    // 如果队列满了，就暂时丢弃新事件防止缓冲区溢出。
     if (next_head == BufferTail)
         return;
 
@@ -41,7 +41,7 @@ bool ReadKeyboard(KEYBOARD_EVENT *event)
     if (event == NULL)
         return false;
 
-    // 缓冲区为空，直接返回 false
+    // 缓冲区为空，直接返回 false。
     if (BufferHead == BufferTail)
         return false;
 
