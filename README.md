@@ -1,5 +1,9 @@
 # **Evoncil OS**
 
+更新日期：2026.5.25，键盘问题已经修复，现在可以在 Hyper-V 中进行输入，例图如下。
+
+![Hyper-V 里能输入了](./README/ICanType.png)
+
 编译器指定为 `clang`，由于是裸机编程，因此不需要标准 C 库。
 
 建议使用 LLVM 在 GitHub 上的官方仓库。
