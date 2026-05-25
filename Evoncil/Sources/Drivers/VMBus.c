@@ -197,65 +197,20 @@ static volatile bool OpenChannelReceived = false;
 static volatile uint32_t LastGpadlStatus = 0;
 static volatile uint32_t LastOpenStatus = 0;
 
-/**
- * VMBus 专用 SynIC 中断处理函数。
- */
-static void InterruptHandler(void);
-
-/**
- * 向宿主机发送 VMBus 控制消息。
- */
-static bool PostMessage(const void *payload, uint32_t size);
-
-/**
- * 向宿主机发送某个通道的事件通知。
- */
-static void NotifyHost(uint32_t channel_id);
-
-/**
- * 处理 SynIC 消息页中的控制消息。
- */
-static void ProcessControlMessage(volatile HV_MESSAGE *message);
-
-/**
- * 处理通道事件位图。
- */
-static void ProcessEventFlags(void);
-
-/**
- * 记录宿主机提供的一个通道。
- */
-static void SaveOfferedChannel(const VMBUS_CHANNEL_OFFER_CHANNEL *offer);
-
-/**
- * 等待某个异步标志变成 true。
- */
-static bool WaitForFlag(volatile bool *flag);
-
-/**
- * 比较两个 VMBus GUID。
- */
-static bool GuidEquals(const VMBUS_GUID *left, const VMBUS_GUID *right);
-
-/**
- * 计算环形缓冲区真实可用的数据区大小。
- */
-static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel);
-
-/**
- * 往环形缓冲区写入任意字节序列。
- */
+static void InterruptHandler(void); // SynIC 中断处理函数。
+static bool PostMessage(const void *payload, uint32_t size); // 向宿主机发送 VMBus 控制消息。
+static void NotifyHost(uint32_t channel_id); // 向宿主机发送某个通道的事件通知。
+static void ProcessControlMessage(volatile HV_MESSAGE *message); // 处理 SynIC 消息页中的控制消息。
+static void ProcessEventFlags(void); // 处理通道事件位图。
+static void SaveOfferedChannel(const VMBUS_CHANNEL_OFFER_CHANNEL *offer); // 记录宿主机提供的一个通道。
+static bool WaitForFlag(volatile bool *flag); // 等待某个异步标志变成 true。
+static bool GuidEquals(const VMBUS_GUID *left, const VMBUS_GUID *right); // 比较两个 VMBus GUID。
+static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel); // 计算环形缓冲区真实可用的数据区大小。
+// 往环形缓冲区写入任意字节序列。
 static uint32_t CopyToRing(VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t offset, const void *buffer, uint32_t size);
-
-/**
- * 从环形缓冲区读取任意字节序列。
- */
+// 从环形缓冲区读取任意字节序列。
 static uint32_t CopyFromRing(const VMBUS_RING_BUFFER *ring, uint32_t data_size, uint32_t offset, void *buffer, uint32_t size);
-
-/**
- * 对齐到 8 字节边界。
- */
-static uint32_t Align8(uint32_t value);
+static uint32_t Align8(uint32_t value); // 对齐到 8 字节边界。
 
 void InitVMBus(void)
 {
