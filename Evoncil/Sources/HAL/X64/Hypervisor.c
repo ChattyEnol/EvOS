@@ -24,6 +24,8 @@
 static uint64_t EVOS_ID = 0x8100000045764F53ull;
 static void *HypercallPage = NULL;
 
+typedef uint64_t (*HYPERCALL_PAGE_ROUTINE)(uint64_t control, uint64_t input, uint64_t output);
+
 void SetupHypervisor(uint64_t message_address, uint64_t event_address)
 {
     WriteMSR(HV_X64_MSR_GUEST_OS_ID, EVOS_ID);
@@ -37,8 +39,8 @@ void SetupHypervisor(uint64_t message_address, uint64_t event_address)
     // 把完整的物理地址打入特定的 MSR 中，最后的 1 代表启用该通道
     WriteMSR(HV_X64_MSR_SIMP, (message_address) | 1);
     WriteMSR(HV_X64_MSR_SIEFP, (event_address) | 1);
-    // 写入向量号（80），同时把第 17 位的 Auto-EOI 开启，省去手动帮 APIC 擦屁股的麻烦
-    WriteMSR(HV_X64_MSR_SINT2, VMBUS_INTERRUPT_VECTOR | (1ULL << 17));
+    // 写入向量号（80），保持 SINT2 未屏蔽。EOI 仍然交给 Local APIC 和 EOM 正常处理。
+    WriteMSR(HV_X64_MSR_SINT2, VMBUS_INTERRUPT_VECTOR);
     // 激活整个合成中断控制面
     WriteMSR(HV_X64_MSR_SCONTROL, 1);
 }
@@ -47,12 +49,11 @@ uint64_t Hypercall(uint64_t control_code, uint64_t input_parameter)
 {
     uint64_t result;
 
-    // 在 x64 契约下，Hyper-V 规定由 rcx 携带控制码，rdx 携带输入参数的物理内存指针
-    __asm__ volatile(
-        "vmcall"
-        : "=a"(result)
-        : "c"(control_code), "d"(input_parameter)
-        : "cc", "memory");
+    if (HypercallPage == NULL)
+        return 0xFFFFFFFFFFFFFFFFull;
+
+    HYPERCALL_PAGE_ROUTINE routine = (HYPERCALL_PAGE_ROUTINE)HypercallPage;
+    result = routine(control_code, input_parameter, 0);
 
     return result;
 }

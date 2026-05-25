@@ -34,8 +34,14 @@ void CommonInterruptHandler(uint64_t vector, uint64_t error_code, INTERRUPT_FRAM
 {
     (void)error_code;
 
-    // 率先拦截所有异常。
-    if (vector != 32)
+    if (vector == 128)
+    {
+        // EnolCaller(frame);
+        return;
+    }
+
+    // 只有 CPU 保留的 0..31 才是异常，32 以上都是软件或外部中断。
+    if (vector < 32)
     {
         kprintf("\n!!! KERNEL PANIC: CPU EXCEPTION %d !!!\n", (int)vector);
         kprintf("RIP: %d   CS:  %d   RFLAGS: %d\n", frame->RIP, frame->CS, frame->RFLAGS);
@@ -55,12 +61,6 @@ void CommonInterruptHandler(uint64_t vector, uint64_t error_code, INTERRUPT_FRAM
         while (1)
             Halt();
     }
-
-    // if (vector == 128)
-    // {
-    //     EnolCaller(frame);
-    //     return;
-    // }
 
     if (vector >= 32)
     {

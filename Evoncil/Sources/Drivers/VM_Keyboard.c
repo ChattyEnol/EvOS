@@ -8,50 +8,159 @@
 #include <Drivers/Keyboard.h>
 #include <Drivers/VM/VMBus.h>
 #include <Drivers/VM/VM_Keyboard.h>
+#include <HAL/HAL.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
-#define VMBUS_KEYBOARD_CHANNEL_ID 3
-#define VMBUS_KEYBOARD_BUFFER_SIZE 4096
+#define VMBUS_KEYBOARD_BUFFER_SIZE (10 * 4096)
+#define SYNTH_KBD_VERSION 0x00010000u
+#define SYNTH_KBD_PROTOCOL_REQUEST 1
+#define SYNTH_KBD_PROTOCOL_RESPONSE 2
+#define SYNTH_KBD_EVENT 3
+#define SYNTH_KBD_PROTOCOL_ACCEPTED 1u
+#define SYNTH_KBD_IS_BREAK (1u << 1)
+#define SYNTH_KBD_IS_E0 (1u << 2)
+#define SYNTH_KBD_IS_E1 (1u << 3)
+#define VMBUS_PACKET_DATA_INBAND 0x6
+#define VMBUS_PACKET_COMPLETION_REQUESTED 0x1
+
+static const VMBUS_GUID KeyboardGuid = {
+    0xf912ad6d,
+    0x2b17,
+    0x48ea,
+    {0xbd, 0x65, 0xf9, 0x27, 0xa6, 0x1c, 0x76, 0x84}};
 
 typedef struct
 {
+    uint32_t Type;
+} __attribute__((packed)) SYNTH_KBD_HEADER;
+
+typedef struct
+{
+    SYNTH_KBD_HEADER Header;
+    uint32_t Version;
+} __attribute__((packed)) SYNTH_KBD_PROTOCOL_REQUEST_MESSAGE;
+
+typedef struct
+{
+    SYNTH_KBD_HEADER Header;
+    uint32_t Status;
+} __attribute__((packed)) SYNTH_KBD_PROTOCOL_RESPONSE_MESSAGE;
+
+typedef struct
+{
+    SYNTH_KBD_HEADER Header;
     uint16_t MakeCode;
-    uint16_t IsPressed;
-} __attribute__((packed)) VMBUS_KEYBOARD_PACKET;
+    uint16_t Reserved;
+    uint32_t Info;
+} __attribute__((packed)) SYNTH_KBD_EVENT_MESSAGE;
+
+static uint32_t KeyboardChannelId = 0;
+static volatile bool KeyboardProtocolReady = false;
 
 static void VMKeyboardCallback(void *data);
+static bool ConnectKeyboardProtocol(void);
+static bool WaitKeyboardProtocol(void);
+static void HandleKeyboardMessage(const void *message, uint32_t size);
 static KEY_CODE MapMakeCodeToKeyCode(uint16_t make_code);
 
 bool InitVMKeyboard(void)
 {
-    return VMBusOpenChannel(VMBUS_KEYBOARD_CHANNEL_ID, VMBUS_KEYBOARD_BUFFER_SIZE, VMKeyboardCallback);
+    if (!VMBusFindChannelByGuid(&KeyboardGuid, &KeyboardChannelId))
+        return false;
+
+    if (!VMBusOpenChannel(KeyboardChannelId, VMBUS_KEYBOARD_BUFFER_SIZE, VMKeyboardCallback))
+        return false;
+
+    return ConnectKeyboardProtocol();
 }
 
 static void VMKeyboardCallback(void *data)
 {
     VMBUS_CHANNEL *channel = (VMBUS_CHANNEL *)data;
-    if (channel == NULL || channel->InboundBuffer == NULL)
+    if (channel == NULL)
         return;
 
-    VMBUS_RING_BUFFER *ring = channel->InboundBuffer;
-
-    while (ring->ReadIndex != ring->WriteIndex)
+    uint8_t message[256];
+    uint32_t messageSize;
+    uint64_t requestId;
+    while (VMBusReadPacket(channel->ChannelId, message, sizeof(message), &messageSize, &requestId))
     {
-        VMBUS_KEYBOARD_PACKET packet;
-        uint8_t *packet_bytes = (uint8_t *)&packet;
-        uint32_t current_read = ring->ReadIndex;
+        (void)requestId;
+        HandleKeyboardMessage(message, messageSize);
+    }
+}
 
-        for (uint32_t i = 0; i < sizeof(VMBUS_KEYBOARD_PACKET); i++)
-        {
-            packet_bytes[i] = ring->Buffer[current_read];
-            current_read = (current_read + 1) % VMBUS_KEYBOARD_BUFFER_SIZE;
-        }
+static bool ConnectKeyboardProtocol(void)
+{
+    SYNTH_KBD_PROTOCOL_REQUEST_MESSAGE request;
+    memset(&request, 0, sizeof(request));
+    request.Header.Type = SYNTH_KBD_PROTOCOL_REQUEST;
+    request.Version = SYNTH_KBD_VERSION;
 
-        ring->ReadIndex = current_read;
+    KeyboardProtocolReady = false;
+    if (!VMBusSendPacket(
+            KeyboardChannelId,
+            &request,
+            sizeof(request),
+            (uint64_t)(uintptr_t)&request,
+            VMBUS_PACKET_DATA_INBAND,
+            VMBUS_PACKET_COMPLETION_REQUESTED))
+        return false;
 
-        KEY_CODE key_code = MapMakeCodeToKeyCode(packet.MakeCode);
-        if (key_code != KEY_NONE)
-            SubmitKeyboardEvent(key_code, packet.IsPressed != 0);
+    return WaitKeyboardProtocol();
+}
+
+static bool WaitKeyboardProtocol(void)
+{
+    for (uint32_t retry = 0; retry < 100000000u; retry++)
+    {
+        if (KeyboardProtocolReady)
+            return true;
+        Pause();
+    }
+
+    return false;
+}
+
+static void HandleKeyboardMessage(const void *message, uint32_t size)
+{
+    if (message == NULL || size < sizeof(SYNTH_KBD_HEADER))
+        return;
+
+    const SYNTH_KBD_HEADER *header = (const SYNTH_KBD_HEADER *)message;
+    switch (header->Type)
+    {
+    case SYNTH_KBD_PROTOCOL_RESPONSE:
+    {
+        if (size < sizeof(SYNTH_KBD_PROTOCOL_RESPONSE_MESSAGE))
+            return;
+
+        const SYNTH_KBD_PROTOCOL_RESPONSE_MESSAGE *response =
+            (const SYNTH_KBD_PROTOCOL_RESPONSE_MESSAGE *)message;
+        KeyboardProtocolReady = (response->Status & SYNTH_KBD_PROTOCOL_ACCEPTED) != 0;
+        break;
+    }
+    case SYNTH_KBD_EVENT:
+    {
+        if (size < sizeof(SYNTH_KBD_EVENT_MESSAGE))
+            return;
+
+        const SYNTH_KBD_EVENT_MESSAGE *event = (const SYNTH_KBD_EVENT_MESSAGE *)message;
+        uint16_t makeCode = event->MakeCode;
+        if ((event->Info & SYNTH_KBD_IS_E0) != 0)
+            makeCode |= 0xE000;
+        if ((event->Info & SYNTH_KBD_IS_E1) != 0)
+            makeCode |= 0xE100;
+
+        KEY_CODE keyCode = MapMakeCodeToKeyCode(makeCode);
+        if (keyCode != KEY_NONE)
+            SubmitKeyboardEvent(keyCode, (event->Info & SYNTH_KBD_IS_BREAK) == 0);
+        break;
+    }
+    default:
+        break;
     }
 }
 

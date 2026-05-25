@@ -26,12 +26,12 @@ void Evoncil(WORLD *world)
     InitHardware(world);
     InitProcess();
     InitFile();
+    InitKeyboard();
 
     EnableInterrupts();
     
     InitVMBus();
     InitVMKeyboard();
-    InitKeyboard();
 
     DrawScreen(COLOR_EVONCIL);
     InitConsole(world);
