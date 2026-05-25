@@ -6,7 +6,7 @@
 
 编译器指定为 `clang`，由于是裸机编程，因此不需要标准 C 库。
 
-建议使用 LLVM 在 GitHub 上的官方仓库。
+建议使用 LLVM 在 GitHub 上的官方仓库，参考链接 `https://github.com/llvm/llvm-project/releases`。
 
 ## **代码说明**
 
