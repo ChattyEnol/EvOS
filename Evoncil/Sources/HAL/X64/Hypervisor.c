@@ -1,6 +1,6 @@
 /** HAL/X64/Hypervisor.c
  *
- * (C) 2026 Charity Enol
+ * (C) Charity Enol
  *
  * X64 架构下的 Hypervisor 平台相关实现。
  */
@@ -30,18 +30,18 @@ void SetupHypervisor(uint64_t message_address, uint64_t event_address)
 {
     WriteMSR(HV_X64_MSR_GUEST_OS_ID, EVOS_ID);
 
-    // 必须先分配并激活 Hypercall 页面，否则所有的 vmcall 都会失效
+    // 必须先分配并激活 Hypercall 页面，否则所有的 `vmcall` 都会失效。
     HypercallPage = AllocatePage(4096);
     uint64_t hypercallAddress = GetPhysicalAddress(HypercallPage);
-    // Bit 0 是启用位（Enable），把它置 1
+    // Bit 0 是启用位（Enable），把它置 1。
     WriteMSR(HV_X64_MSR_HYPERCALL, hypercallAddress | 1);
 
-    // 把完整的物理地址打入特定的 MSR 中，最后的 1 代表启用该通道
+    // 把完整的物理地址打入特定的 MSR 中，最后的 1 代表启用该通道。
     WriteMSR(HV_X64_MSR_SIMP, (message_address) | 1);
     WriteMSR(HV_X64_MSR_SIEFP, (event_address) | 1);
     // 写入向量号（80），保持 SINT2 未屏蔽。EOI 仍然交给 Local APIC 和 EOM 正常处理。
     WriteMSR(HV_X64_MSR_SINT2, VMBUS_INTERRUPT_VECTOR);
-    // 激活整个合成中断控制面
+    // 激活整个合成中断控制面。
     WriteMSR(HV_X64_MSR_SCONTROL, 1);
 }
 
@@ -60,7 +60,7 @@ uint64_t Hypercall(uint64_t control_code, uint64_t input_parameter)
 
 void AckHyperMessage(void)
 {
-    // 在 x64 架构下，我们通过向 EOM (End of Message) 寄存器写入 0
-    // 来拉低响应线，告诉 Hyper-V 这个槽位空出来了，可以派发下一个控制中断了
+    // 在 x64 架构下，我们通过向 EOM (End of Message) 寄存器写入 0 来拉低响应线。
+    // 告诉 Hyper-V 这个槽位空出来了，可以派发下一个控制中断了。
     WriteMSR(HV_X64_MSR_EOM, 0);
 }
