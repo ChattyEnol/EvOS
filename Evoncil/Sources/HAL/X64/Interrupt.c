@@ -9,7 +9,6 @@
 #include <HAL/X64/APIC.h>
 #include <HAL/X64/Interrupt.h>
 #include <HAL/X64/Table/IDT.h>
-// #include <Noyau/Enolcall.h>
 
 #include <UI/TextIO.h>
 
@@ -33,12 +32,6 @@ void InitInterrupt(void *acpi_root)
 void CommonInterruptHandler(uint64_t vector, uint64_t error_code, INTERRUPT_FRAME *frame)
 {
     (void)error_code;
-
-    if (vector == 128)
-    {
-        // EnolCaller(frame);
-        return;
-    }
 
     // 只有 CPU 保留的 0..31 才是异常，32 以上都是软件或外部中断。
     if (vector < 32)

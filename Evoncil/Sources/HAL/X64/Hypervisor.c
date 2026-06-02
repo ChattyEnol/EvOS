@@ -26,7 +26,7 @@ static void *HypercallPage = NULL;
 
 typedef uint64_t (*HYPERCALL_PAGE_ROUTINE)(uint64_t control, uint64_t input, uint64_t output);
 
-void SetupHypervisor(uint64_t message_address, uint64_t event_address)
+void InitHypervisor(uint64_t message_address, uint64_t event_address)
 {
     WriteMSR(HV_X64_MSR_GUEST_OS_ID, EVOS_ID);
 
@@ -35,7 +35,6 @@ void SetupHypervisor(uint64_t message_address, uint64_t event_address)
     uint64_t hypercallAddress = GetPhysicalAddress(HypercallPage);
     // Bit 0 是启用位（Enable），把它置 1。
     WriteMSR(HV_X64_MSR_HYPERCALL, hypercallAddress | 1);
-
     // 把完整的物理地址打入特定的 MSR 中，最后的 1 代表启用该通道。
     WriteMSR(HV_X64_MSR_SIMP, (message_address) | 1);
     WriteMSR(HV_X64_MSR_SIEFP, (event_address) | 1);
@@ -58,9 +57,11 @@ uint64_t Hypercall(uint64_t control_code, uint64_t input_parameter)
     return result;
 }
 
-void AckHyperMessage(void)
+void Hypereceive(void)
 {
-    // 在 x64 架构下，我们通过向 EOM (End of Message) 寄存器写入 0 来拉低响应线。
-    // 告诉 Hyper-V 这个槽位空出来了，可以派发下一个控制中断了。
+    /** 在 x64 架构下，
+     * 我们通过向 EOM（End of Message）寄存器写入 `0` 来拉低响应线。
+     * 告诉 Hyper-V 这个槽位空出来了，可以派发下一个控制中断了。
+     */
     WriteMSR(HV_X64_MSR_EOM, 0);
 }

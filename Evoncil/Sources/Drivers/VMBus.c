@@ -7,8 +7,8 @@
  * 我参考了很多 Linux 源码中微软自己提交的 `hv` 驱动。
  */
 
-#include <Drivers/VM/VMBus.h>
 #include <EvOS.h>
+#include <Drivers/VM/VMBus.h>
 #include <HAL/HAL.h>
 #include <Noyau/Memory.h>
 
@@ -58,6 +58,10 @@ typedef struct
     uint8_t Payload[HV_MESSAGE_PAYLOAD_SIZE];
 } __attribute__((packed)) HV_POST_MESSAGE_INPUT;
 
+/**
+ * HV_MESSAGE 表示 SIMP 中每个抽屉的总布局。
+ * 包含 MessageType、PayloadSize、消息标志、发送者 ID 以及有效载荷字段。
+ */
 typedef struct
 {
     uint32_t MessageType;
@@ -94,6 +98,10 @@ typedef struct
     uint64_t MonitorPage2;
 } __attribute__((packed)) VMBUS_CHANNEL_INITIATE_CONTACT;
 
+/**
+ * VMBUS_CHANNEL_VERSION_RESPONSE 由宿主机在 Initiate Contact 阶段返回。
+ * 包含是否支持的版本、连接状态和可选的 MessageConnectionId 字段。
+ */
 typedef struct
 {
     VMBUS_MESSAGE_HEADER Header;
@@ -186,31 +194,31 @@ typedef struct
 } __attribute__((packed)) VMBUS_PACKET_DESCRIPTOR;
 
 static VMBUS_CHANNEL VMBusChannels[VMBUS_MAX_CHANNELS];
-static void *VMBusMessagePage = NULL;
-static void *VMBusEventPage = NULL;
-static void *VMBusPostPage = NULL;
-static void *VMBusMonitorPage1 = NULL;
-static void *VMBusMonitorPage2 = NULL;
-static uint32_t VMBusMessageConnectionId = VMBUS_MESSAGE_CONNECTION_ID_4;
-static volatile bool ContactResponseReceived = false;
-static volatile bool OffersDeliveredReceived = false;
-static volatile bool GpadlCreatedReceived = false;
-static volatile bool OpenChannelReceived = false;
-static volatile uint32_t LastGpadlStatus = 0;
-static volatile uint32_t LastOpenStatus = 0;
+static void *VMBusMessagePage = NULL;                                     // 指向消息页（SIMP）的内存起始地址。
+static void *VMBusEventPage = NULL;                                       // 指向事件位页（SIEFP）的内存起始地址。
+static void *VMBusPostPage = NULL;                                        // 用于 Hypercall PostMessage 的输入缓冲页。
+static void *VMBusMonitorPage1 = NULL;                                    // 两个监视页面，用于通道监视回写。
+static void *VMBusMonitorPage2 = NULL;                                    // 第二个监视页面。
+static uint32_t VMBusMessageConnectionId = VMBUS_MESSAGE_CONNECTION_ID_4; // 当前使用的消息连接 ID。
+static volatile bool ContactResponseReceived = false;                     // Initiate Contact 响应接收标志。
+static volatile bool OffersDeliveredReceived = false;                     // Offers Delivered 响应接收标志。
+static volatile bool GpadlCreatedReceived = false;                        // GPADL 创建完成标志。
+static volatile bool OpenChannelReceived = false;                         // Open Channel 完成标志。
+static volatile uint32_t LastGpadlStatus = 0;                             // 最近一次 GPADL 创建返回状态。
+static volatile uint32_t LastOpenStatus = 0;                              // 最近一次 Open Channel 返回状态。
 
-static void InterruptHandler(void);                              // SynIC 中断处理函数。
-static bool PostMessage(const void *payload, uint32_t size);     // 向宿主机发送 VMBus 控制消息。
-static bool WaitForFlag(volatile bool *flag);                    // 等待某个异步标志变成 true。
-static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel);   // 计算环形缓冲区真实可用的数据区大小。
+static void InterruptHandler(void);                            // SynIC 中断处理入口，用于解析消息与事件并分发。
+static bool PostMessage(const void *payload, uint32_t size);   // 调用 Hypercall 投递 PostMessage。
+static bool WaitForFlag(volatile bool *flag);                  // 在超时循环中检查 volatile 标志位。
+static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel); // 返回环形缓冲区用于数据的字节数。
 
-static uint32_t CopyToRing( // 往环形缓冲区写入任意字节序列。
+static uint32_t CopyToRing( // 往环形缓冲区写入任意字节序列并返回更新后的偏移。
     VMBUS_RING_BUFFER *ring,
     uint32_t data_size,
     uint32_t offset,
     const void *buffer,
     uint32_t size);
-static uint32_t CopyFromRing( // 从环形缓冲区读取任意字节序列。
+static uint32_t CopyFromRing( // 从环形缓冲区读取任意字节序列并返回更新后的偏移。
     const VMBUS_RING_BUFFER *ring,
     uint32_t data_size,
     uint32_t offset,
@@ -235,7 +243,7 @@ void InitVMBus(void)
         VMBusMonitorPage2 == NULL)
         return;
 
-    SetupHypervisor(GetPhysicalAddress(VMBusMessagePage), GetPhysicalAddress(VMBusEventPage));
+    InitHypervisor(GetPhysicalAddress(VMBusMessagePage), GetPhysicalAddress(VMBusEventPage));
     SetInterruptHandler(VMBUS_INTERRUPT_VECTOR, InterruptHandler);
 
     VMBUS_CHANNEL_INITIATE_CONTACT contact;
@@ -417,12 +425,7 @@ bool VMBusSendPacket(
     next = CopyToRing(ring, dataSize, next, &previousIndices, sizeof(previousIndices));
     ring->WriteIndex = next;
 
-    if (channel_id >= VMBUS_MAX_CHANNELS)
-        return;
-    VMBUS_CHANNEL *channel = &VMBusChannels[channel_id];
-    if (!channel->Offered)
-        return;
-
+    // 写入 ring 后通知宿主机读取新的数据包。
     (void)Hypercall(
         HVCALL_SIGNAL_EVENT | HV_HYPERCALL_FAST_BIT,
         channel->ConnectionId != 0 ? channel->ConnectionId
@@ -534,7 +537,7 @@ static void InterruptHandler(void)
         message->MessageType = 0;
 
         if ((message->MessageFlags & 1u) != 0 || oldType != 0)
-            AckHyperMessage();
+            Hypereceive();
     }
 
     volatile uint64_t *eventBits =
@@ -581,6 +584,7 @@ static bool WaitForFlag(volatile bool *flag)
     return false;
 }
 
+// 环形缓冲区分为控制区与数据区，控制页大小会被排除。
 static uint32_t GetRingDataSize(const VMBUS_CHANNEL *channel)
 {
     if (channel == NULL || channel->RingBufferSize <= PAGE_SIZE)

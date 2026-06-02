@@ -54,9 +54,25 @@ typedef struct
 /* 暴露给内核驱动层其他设备的公共接口 */
 
 void InitVMBus(void);
+
+/**
+ * 打开一个 VMBus 通道并为其分配环形缓冲区。
+ * 成功则返回 true，并在通道结构中填充缓冲区与 GPADL 信息。
+ */
 bool VMBusOpenChannel(uint32_t channel_id, uint32_t buffer_size, void (*callback)(void *));
+// 向通道写入一条消息，使用内部的 VMBusSendPacket 接口。
 void VMBusWriteChannel(uint32_t channel_id, const void *buffer, uint32_t size);
+
+/**
+ * 根据设备 GUID 查找已被 Offer 的通道编号。
+ * 找到时返回 true，并把通道索引写入 `channel_id` 参数中。
+ */
 bool VMBusFindChannelByGuid(const VMBUS_GUID *guid, uint32_t *channel_id);
+
+/**
+ * 将一个数据包写入通道的环形缓冲区并触发事件通知。
+ * 该函数包含包描述符构造、对齐填充、索引更新与 Hypercall 信号阶段。
+ */
 bool VMBusSendPacket(
     uint32_t channel_id,
     const void *buffer,

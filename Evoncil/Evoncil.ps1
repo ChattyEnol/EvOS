@@ -92,12 +92,12 @@ if ($LASTEXITCODE -ne 0) {
 
 Remove-Item -Path $tempDirectory -Recurse -Force
 
-Write-Host "[*] Signing..." -ForegroundColor White
-$cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.FriendlyName -eq "EvOS Certificate" }
-Set-AuthenticodeSignature -FilePath "$outDirectory/$outFilename" -Certificate $cert
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[!] Signing failed!" -ForegroundColor Red
-    exit $LASTEXITCODE
-}
+# Write-Host "[*] Signing..." -ForegroundColor White
+# $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.FriendlyName -eq "EvOS Certificate" }
+# Set-AuthenticodeSignature -FilePath "$outDirectory/$outFilename" -Certificate $cert
+# if ($LASTEXITCODE -ne 0) {
+#     Write-Host "[!] Signing failed!" -ForegroundColor Red
+#     exit $LASTEXITCODE
+# }
 
 Pop-Location

@@ -25,6 +25,10 @@
 #define VMBUS_PACKET_DATA_INBAND 0x6
 #define VMBUS_PACKET_COMPLETION_REQUESTED 0x1
 
+/**
+ * Hyper-V 虚拟键盘设备的 GUID 标识符。
+ * VMBus 通过此 GUID 分发设备 Offer，指明键盘通道的存在。
+ */
 static const VMBUS_GUID KeyboardGuid = {
     0xf912ad6d,
     0x2b17,
@@ -36,6 +40,10 @@ typedef struct
     uint32_t Type;
 } __attribute__((packed)) SYNTH_KBD_HEADER;
 
+/**
+ * 向宿主机发起键盘协议协商的消息。
+ * 包含消息类型与协议版本号。
+ */
 typedef struct
 {
     SYNTH_KBD_HEADER Header;

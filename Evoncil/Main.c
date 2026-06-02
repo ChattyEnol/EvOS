@@ -5,6 +5,7 @@
 
 #include <World/World.h>
 #include <HAL/HAL.h>
+#include <Noyau/Enocall.h>
 #include <Noyau/Memory.h>
 #include <Noyau/Process.h>
 #include <Drivers/Graphics.h>
@@ -25,6 +26,7 @@ void Evoncil(WORLD *world)
     InitGraphics(&world->Graphics);
     InitHardware(world);
     InitProcess();
+    InitEnocall();
     InitFile();
     InitKeyboard();
 

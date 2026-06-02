@@ -42,11 +42,10 @@
     INTERRUPT_OPT(21)     \
     INTERRUPT_OPT(32)     \
     INTERRUPT_OPT(80)     \
-    INTERRUPT_OPT(128)    \
     INTERRUPT_OPT(255)
 
 // 汇编中断入口保存下来的通用寄存器和硬件栈帧。
-// EnolCaller 会直接修改这里的 RAX，把系统调用返回值带回去。
+// 这里仅用于异常和硬中断，系统调用已经改走 syscall 专用入口。
 typedef struct
 {
     uint64_t R15;

@@ -6,7 +6,7 @@
  */
 
 #include <User/PELoader.h>
-#include <User/Syscall.h>
+#include <User/POSIX.h>
 
 #include <stddef.h>
 #include <stdint.h>

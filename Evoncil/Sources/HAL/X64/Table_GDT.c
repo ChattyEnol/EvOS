@@ -8,8 +8,8 @@
 #include <HAL/X64/Table/GDT.h>
 #include <stddef.h>
 
-// 静态分配 3 个表项，对外完全隐藏
-static GDT_DESCRIPTOR GDT_TABLE[3];
+// 静态分配 5 个表项，对外完全隐藏。
+static GDT_DESCRIPTOR GDT_TABLE[5];
 
 void InitGDT(void)
 {
@@ -40,6 +40,26 @@ void InitGDT(void)
     GDT_TABLE[2].P_DPL_S_Type = 0x92;
     GDT_TABLE[2].G_DB_L_ALV_Limit_19_16 = 0xC0;
     GDT_TABLE[2].Base_31_24 = 0;
+
+    // 第 3 项：用户数据段 (Selector: 0x18)。
+    // Type=0x2 (可读写数据), S=1 (代码/数据), DPL=11 (Ring 3), P=1 -> 11110010b = 0xF2。
+    // G=1 (4K粒度), D=1 (32位/64位兼容数据属性), L=0 (数据段此位必为0), AVL=0 -> 11000000b = 0xC0。
+    GDT_TABLE[3].Limit_15_0 = 0;
+    GDT_TABLE[3].Base_15_0 = 0;
+    GDT_TABLE[3].Base_23_16 = 0;
+    GDT_TABLE[3].P_DPL_S_Type = 0xF2;
+    GDT_TABLE[3].G_DB_L_ALV_Limit_19_16 = 0xC0;
+    GDT_TABLE[3].Base_31_24 = 0;
+
+    // 第 4 项：用户代码段 (Selector: 0x20)。
+    // Type=0xA (可执行/可读代码), S=1 (代码/数据), DPL=11 (Ring 3), P=1 -> 11111010b = 0xFA。
+    // G=1 (4K粒度), D=0 (64位下代码段此位必为0), L=1 (64位长模式), AVL=0 -> 10100000b = 0xA0。
+    GDT_TABLE[4].Limit_15_0 = 0;
+    GDT_TABLE[4].Base_15_0 = 0;
+    GDT_TABLE[4].Base_23_16 = 0;
+    GDT_TABLE[4].P_DPL_S_Type = 0xFA;
+    GDT_TABLE[4].G_DB_L_ALV_Limit_19_16 = 0xA0;
+    GDT_TABLE[4].Base_31_24 = 0;
 
     // 准备好交给 lgdt 的寄存器映像
     GDT_REGISTER gdtr;

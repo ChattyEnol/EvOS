@@ -152,8 +152,54 @@ ISR_NO_ERRORCODE 80  # VMBus 专用中断。
 
 ISR_NO_ERRORCODE 255 # APIC Spurious Interrupt Vector.
 
-# 系统调用。
-ISR_NO_ERRORCODE 128 # INT 0x80.
+# 声明 x64 syscall 分发函数。
+.extern HandleSyscall
+
+# x64 高性能系统调用入口。
+# CPU 进入这里时，RCX 保存用户返回地址，R11 保存用户 RFLAGS。
+.global SyscallStub
+.align 16
+SyscallStub:
+    push    %rcx
+    push    %r11
+
+    # 为 Windows x64 呼叫约定准备影子空间和 3 个栈上传参。
+    sub     $72, %rsp
+    mov     %r10, 32(%rsp)
+    mov     %r8, 40(%rsp)
+    mov     %r9, 48(%rsp)
+
+    # syscall 约定：RAX, RDI, RSI, RDX, R10, R8, R9。
+    # C 约定：RCX, RDX, R8, R9, Stack...
+    mov     %rdx, %r9
+    mov     %rsi, %r8
+    mov     %rdi, %rdx
+    mov     %rax, %rcx
+
+    call    HandleSyscall
+
+    add     $72, %rsp
+    pop     %r11
+    pop     %rcx
+    sysretq
+
+# 用户态封装调用的原始 syscall 跳板。
+.global Enocall
+.align 16
+Enocall:
+    push    %rdi
+    push    %rsi
+    mov     %rcx, %rax
+    mov     %rdx, %rdi
+    mov     %r8, %rsi
+    mov     %r9, %rdx
+    mov     56(%rsp), %r10
+    mov     64(%rsp), %r8
+    mov     72(%rsp), %r9
+    syscall
+    pop     %rsi
+    pop     %rdi
+    ret
 
 # 通用中断处理器。
 .align 16

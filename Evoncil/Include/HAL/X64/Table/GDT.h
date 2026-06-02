@@ -53,6 +53,8 @@
 // 预留硬编码的选择子，后面 IDT 填充 Selector 时直接用这些宏，绝对不会踩空！
 #define GD_SELECTOR_KERNEL_CODE 0x08
 #define GD_SELECTOR_KERNEL_DATA 0x10
+#define GD_SELECTOR_USER_DATA 0x18
+#define GD_SELECTOR_USER_CODE 0x20
 
 /**
  * 64 位普通代码/数据段描述符（8 字节）。

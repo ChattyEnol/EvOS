@@ -1,6 +1,6 @@
 /** HAL/HAL.h
  *
- * (C) 2026 Charity Enol
+ * (C) Charity Enol
  *
  * 强迫症真的很难受！
  * 这个头文件里声明的函数我想达到一个“平台无关的硬件抽象”。
@@ -14,6 +14,19 @@
 
 #include <World/World.h>
 #include <stdint.h>
+
+/**
+ * 平台无关的系统调用现场。
+ * HAL 负责把不同架构的寄存器约定翻译成这份结构。
+ */
+typedef struct
+{
+    uint64_t Number;       // 系统调用号。
+    uint64_t Arguments[6]; // 最多 6 个通用参数。
+    uint64_t Result;       // 返回给调用方的结果。
+} SYSTEM_CALL_CONTEXT;
+
+typedef uint64_t (*HandleSystemCall)(SYSTEM_CALL_CONTEXT *context); // 系统调用处理函数原型。
 
 /**
  * 处理器控制。
@@ -42,13 +55,15 @@ void EnableInterrupts(void);                             // 开中断。
 void DisableInterrupts(void);                            // 关中断。
 void SetInterruptHandler(uint8_t vector, void *handler); // 绑定某个中断号的处理程序。
 void SetHardwareVector(uint8_t irq, uint8_t vector);     // 将某个硬件中断号绑定到某个中断向量上。
+void InitSystemCall(HandleSystemCall handler);           // 初始化高性能系统调用入口。
 
 /**
  * Hypervisor 平台相关的函数。
  */
 
-void SetupHypervisor(uint64_t message_address, uint64_t event_address); // 配置虚拟化通信内存
-uint64_t Hypercall(uint64_t code, uint64_t param);                      // 发起虚拟机呼叫
-void AckHyperMessage(void);                                             // 告诉宿主机当前消息已处理完毕，请清理槽位并重置通知线
+void InitHypervisor(uint64_t message_address, uint64_t event_address); // 配置虚拟化通信内存。
+uint64_t Hypercall(uint64_t code, uint64_t param);                     // 发起虚拟机呼叫。
+// 告诉宿主机当前消息已处理完毕，请清理槽位并重置通知线。
+void Hypereceive(void);
 
 #endif // HAL_HAL_H
