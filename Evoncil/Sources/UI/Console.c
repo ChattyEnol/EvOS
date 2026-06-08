@@ -94,7 +94,7 @@ static void PrintHeader(void)
 
 static void PrintPrompt(void)
 {
-    kprintf("EvOS> ");
+    kprintf("Evoncil> ");
 }
 
 static void PrintHelp(void)
@@ -103,7 +103,6 @@ static void PrintHelp(void)
     kprintf("info       Show system information.\n");
     kprintf("process    Show process information.\n");
     kprintf("fs         Show file system information.\n");
-    kprintf("xhci       Show xHCI controller information.\n");
     kprintf("clear      Clear the screen.\n");
     kprintf("echo TEXT  Print TEXT.\n");
 }
