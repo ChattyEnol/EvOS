@@ -32,6 +32,6 @@ void TextBackspace(void);
 void SetTextColor(COLOR foreground, COLOR background);
 void SetTextCursor(uint32_t column, uint32_t row);
 
-void kprintf(const char *fmt, ...);
+void EnoPrint(const char *fmt, ...);
 
 #endif // UI_TEXT_IO_H

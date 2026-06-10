@@ -201,7 +201,7 @@ void SetTextCursor(uint32_t column, uint32_t row)
     TEXT_CURSOR_ROW = row;
 }
 
-void kprintf(const char *fmt, ...)
+void EnoPrint(const char *fmt, ...)
 {
     va_list argumentList;
     va_start(argumentList, fmt);

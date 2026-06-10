@@ -36,19 +36,19 @@ void CommonInterruptHandler(uint64_t vector, uint64_t error_code, INTERRUPT_FRAM
     // 只有 CPU 保留的 0..31 才是异常，32 以上都是软件或外部中断。
     if (vector < 32)
     {
-        kprintf("\n!!! KERNEL PANIC: CPU EXCEPTION %d !!!\n", (int)vector);
-        kprintf("RIP: %d   CS:  %d   RFLAGS: %d\n", frame->RIP, frame->CS, frame->RFLAGS);
-        kprintf("RSP: %d   SS:  %d   ERROR:  %d\n", frame->RSP, frame->SS, frame->ErrorCode);
-        kprintf("RAX: %d   RBX: %d   RCX:    %d\n", frame->RAX, frame->RBX, frame->RCX);
-        kprintf("RDI: %d   RSI: %d   RBP:    %d\n", frame->RDI, frame->RSI, frame->RBP);
-        kprintf("R8:  %d   R9:  %d   R10:    %d\n", frame->R8, frame->R9, frame->R10);
+        EnoPrint("\n!!! KERNEL PANIC: CPU EXCEPTION %d !!!\n", (int)vector);
+        EnoPrint("RIP: %d   CS:  %d   RFLAGS: %d\n", frame->RIP, frame->CS, frame->RFLAGS);
+        EnoPrint("RSP: %d   SS:  %d   ERROR:  %d\n", frame->RSP, frame->SS, frame->ErrorCode);
+        EnoPrint("RAX: %d   RBX: %d   RCX:    %d\n", frame->RAX, frame->RBX, frame->RCX);
+        EnoPrint("RDI: %d   RSI: %d   RBP:    %d\n", frame->RDI, frame->RSI, frame->RBP);
+        EnoPrint("R8:  %d   R9:  %d   R10:    %d\n", frame->R8, frame->R9, frame->R10);
 
         // 如果是经典的 14 号缺页异常，必须把 CR2 读出来看看它到底在访问哪里的野指针。
         if (vector == 14)
         {
             uint64_t cr2_val;
             __asm__ volatile("mov %%cr2, %0" : "=r"(cr2_val));
-            kprintf("CR2 (Fault Address): 0x%016llX\n", cr2_val);
+            EnoPrint("CR2 (Fault Address): 0x%016llX\n", cr2_val);
         }
 
         while (1)

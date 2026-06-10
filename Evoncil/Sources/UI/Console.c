@@ -86,25 +86,22 @@ void RunConsole(void)
 
 static void PrintHeader(void)
 {
-    kprintf("Evoncil OS\n");
-    kprintf("----------\n");
-    kprintf("(C) Charity Enol\n");
-    kprintf("\n");
+    EnoPrint("Evoncil OS\n");
+    EnoPrint("----------\n");
+    EnoPrint("(C) Charity Enol\n");
+    EnoPrint("\n");
 }
 
-static void PrintPrompt(void)
-{
-    kprintf("Evoncil> ");
-}
+static void PrintPrompt(void) { EnoPrint("Evoncil> "); }
 
 static void PrintHelp(void)
 {
-    kprintf("help       Show commands.\n");
-    kprintf("info       Show system information.\n");
-    kprintf("process    Show process information.\n");
-    kprintf("fs         Show file system information.\n");
-    kprintf("clear      Clear the screen.\n");
-    kprintf("echo TEXT  Print TEXT.\n");
+    EnoPrint("help       Show commands.\n");
+    EnoPrint("info       Show system information.\n");
+    EnoPrint("process    Show process information.\n");
+    EnoPrint("fs         Show file system information.\n");
+    EnoPrint("clear      Clear the screen.\n");
+    EnoPrint("echo TEXT  Print TEXT.\n");
 }
 
 static void PrintInfo(void)
@@ -112,24 +109,24 @@ static void PrintInfo(void)
     if (CONSOLE_WORLD == NULL)
         return;
 
-    kprintf("Graphics driver online.\n");
-    kprintf("Resolution: %u x %u\n",
-            CONSOLE_WORLD->Graphics.HorizontalResolution,
-            CONSOLE_WORLD->Graphics.VerticalResolution);
-    kprintf("Framebuffer: %p\n", (void *)(uintptr_t)CONSOLE_WORLD->Graphics.FrameBufferBase);
-    kprintf("Free memory: %u KB\n", (unsigned int)(GetFreeMemorySize() / 1024));
-    kprintf("Used memory: %u KB\n", (unsigned int)(GetUsedMemorySize() / 1024));
-    kprintf("Processes: %u\n", GetProcessCount());
-    kprintf("File system: %s\n", IsFileSystemReady() ? "FAT32" : "not mounted");
+    EnoPrint("Graphics driver online.\n");
+    EnoPrint("Resolution: %u x %u\n",
+             CONSOLE_WORLD->Graphics.HorizontalResolution,
+             CONSOLE_WORLD->Graphics.VerticalResolution);
+    EnoPrint("Framebuffer: %p\n", (void *)(uintptr_t)CONSOLE_WORLD->Graphics.FrameBufferBase);
+    EnoPrint("Free memory: %u KB\n", (unsigned int)(GetFreeMemorySize() / 1024));
+    EnoPrint("Used memory: %u KB\n", (unsigned int)(GetUsedMemorySize() / 1024));
+    EnoPrint("Processes: %u\n", GetProcessCount());
+    EnoPrint("File system: %s\n", IsFileSystemReady() ? "FAT32" : "not mounted");
 }
 
 static void PrintProcess(void)
 {
     PROCESS *currentProcess = GetCurrentProcess();
 
-    kprintf("Process count: %u\n", GetProcessCount());
+    EnoPrint("Process count: %u\n", GetProcessCount());
     if (currentProcess != NULL)
-        kprintf("Current: %u %s\n", currentProcess->ProcessID, currentProcess->Name);
+        EnoPrint("Current: %u %s\n", currentProcess->ProcessID, currentProcess->Name);
 }
 
 static void PrintFileSystem(void)
@@ -138,14 +135,14 @@ static void PrintFileSystem(void)
 
     if (!IsFileSystemReady())
     {
-        kprintf("FAT32 volume not mounted.\n");
+        EnoPrint("FAT32 volume not mounted.\n");
         return;
     }
 
-    kprintf("FAT32 mounted.\n");
-    kprintf("Bytes/sector: %u\n", volume->BytesPerSector);
-    kprintf("Sectors/cluster: %u\n", volume->SectorsPerCluster);
-    kprintf("Root cluster: %u\n", volume->RootCluster);
+    EnoPrint("FAT32 mounted.\n");
+    EnoPrint("Bytes/sector: %u\n", volume->BytesPerSector);
+    EnoPrint("Sectors/cluster: %u\n", volume->SectorsPerCluster);
+    EnoPrint("Root cluster: %u\n", volume->RootCluster);
 }
 
 static void ClearConsole(void)
@@ -198,11 +195,11 @@ static bool ExecuteCommand(void)
     if (CommandStartsWith("echo"))
     {
         const char *text = SkipSpaces(command + 4);
-        kprintf("%s\n", text);
+        EnoPrint("%s\n", text);
         return true;
     }
 
-    kprintf("Unknown command: %s\n", command);
+    EnoPrint("Unknown command: %s\n", command);
     return true;
 }
 
