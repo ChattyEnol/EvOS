@@ -4,7 +4,7 @@ Push-Location $PSScriptRoot
 
 $platform = "X64"
 $target = "x86_64-unknown-windows"
-$outDirectory = "../Bin/EFI/BOOT"
+$outDirectory = "../.output/EFI/BOOT"
 $outFilename = "BOOTX64.EFI"
 if (!(Test-Path $outDirectory)) { New-Item -ItemType Directory -Path $outDirectory -Force }
 

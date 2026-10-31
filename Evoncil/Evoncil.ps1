@@ -4,10 +4,10 @@ Push-Location $PSScriptRoot
 
 $platform = "X64"
 $target = "x86_64-unknown-windows"
-$outDirectory = "../Bin/EFI/Evoncil"
+$outDirectory = "../.output/EFI/Evoncil"
 $outFilename = "Evoncil.EFI"
 
-$tempDirectory = "./.Temp"
+$tempDirectory = "./.temp"
 $tempLibraryName = "EvNoyau.lib"
 
 if (Test-Path $tempDirectory) { Remove-Item -Path $tempDirectory -Recurse -Force }

@@ -9,7 +9,7 @@ if (-not
 Push-Location $PSScriptRoot
 
 # 1. 编译
-if (Test-Path "./Bin") { Remove-Item -Path "./Bin" -Recurse -Force }
+if (Test-Path "./.output") { Remove-Item -Path "./.output" -Recurse -Force }
 Push-Location "$PSScriptRoot/EFI"; . ./Loader.ps1;
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] Loader generation failed!" -ForegroundColor Red
@@ -23,6 +23,16 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 Pop-Location
+
+# 下面注释的部分是我用来测试 CMake 的，我还没有验证过。
+
+# & cmake -G "Ninja" -B ./Build
+# & cmake --build ./Build
+
+# if ($LASTEXITCODE -ne 0) {
+#     Write-Host "[!] CMake Build failed!" -ForegroundColor Red
+#     exit $LASTEXITCODE
+# }
 
 # 2. 构建 VHDX
 
@@ -47,7 +57,7 @@ Format-Volume -FileSystem FAT32 -NewFileSystemLabel "EVOS" -Confirm:$false | Out
 
 Write-Host "[*] Copying files to VHDX..." -ForegroundColor White
 $drive = (Get-Disk $disk.Number | Get-Partition | Where-Object DriveLetter).DriveLetter
-Copy-Item -Path "./Bin/*" -Destination "$($drive):/" -Recurse -Force
+Copy-Item -Path "./Output/*" -Destination "$($drive):/" -Recurse -Force
 
 Write-Host "[*] Dismounting VHDX..." -ForegroundColor Yellow
 Dismount-VHD -Path $vhdPath
