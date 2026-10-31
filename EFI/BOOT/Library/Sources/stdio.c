@@ -20,6 +20,13 @@ int printf(const char *format, ...)
         if (format[formatIndex] == '%' && format[formatIndex + 1] != '\0')
         {
             formatIndex++;
+            // 可选的补零宽度：%02x、%16x、%08x……高位补 0，OutBuffer 早就有 min_length。
+            int minWidth = 0;
+            while (format[formatIndex] >= '0' && format[formatIndex] <= '9')
+            {
+                minWidth = minWidth * 10 + (format[formatIndex] - '0');
+                formatIndex++;
+            }
             if (format[formatIndex] == 's') // String
             {
                 char *s = va_arg(args, char *);
@@ -31,21 +38,21 @@ int printf(const char *format, ...)
                 UINT64 p = va_arg(args, UINT64);
                 CHAR16 hexBuffer[65];
                 U64ToString(p, 16, hexBuffer);
-                OutBuffer(hexBuffer, bufferOut, &bufferOutIndex, 16);
+                OutBuffer(hexBuffer, bufferOut, &bufferOutIndex, minWidth ? minWidth : 16);
             }
             else if (format[formatIndex] == 'x') // 普通 16 进制：按需显示
             {
                 UINT64 x = va_arg(args, UINT64);
                 CHAR16 hexBuffer[65];
                 U64ToString(x, 16, hexBuffer);
-                OutBuffer(hexBuffer, bufferOut, &bufferOutIndex, 0);
+                OutBuffer(hexBuffer, bufferOut, &bufferOutIndex, minWidth);
             }
             else if (format[formatIndex] == 'd') // 十进制。
             {
                 UINT32 n = va_arg(args, UINT32);
                 CHAR16 decBuffer[65];
                 U64ToString(n, 10, decBuffer);
-                OutBuffer(decBuffer, bufferOut, &bufferOutIndex, 0);
+                OutBuffer(decBuffer, bufferOut, &bufferOutIndex, minWidth);
             }
             // 加新的？那就 else-if 吧。
         }
@@ -54,7 +61,8 @@ int printf(const char *format, ...)
     }
 
     bufferOut[bufferOutIndex] = L'\0';
-    EV_LOAD(SYSTEM_TABLE->ConOut->OutputString(SYSTEM_TABLE->ConOut, bufferOut));
+    // EV_LOAD(SYSTEM_TABLE->ConOut->OutputString(SYSTEM_TABLE->ConOut, bufferOut));
+    SYSTEM_TABLE->ConOut->OutputString(SYSTEM_TABLE->ConOut, bufferOut);
     va_end(args);
     return (int)bufferOutIndex;
 }

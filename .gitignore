@@ -1,4 +1,4 @@
 .*/
-Evoncil/.Temp
-EvOS.vhdx
+Evoncil/.*/
+*.vhdx
 *.log

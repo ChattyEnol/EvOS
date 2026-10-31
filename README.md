@@ -1,10 +1,8 @@
 # **Evoncil OS**
 
-更新日期：2026.6.2，基本完善了系统调用 `Enocall()`。
+更新日期：2026.10.31，修复了半年以来 Hyper-V 无法启动的问题。
 
-键盘问题已经修复，现在可以在 Hyper-V 中进行输入，例图如下。
-
-![Hyper-V 里能输入了](./README/ICanType.png)
+原因是 Hyper-V 的 `BootServices->LoadImage();` 函数要求 `DevicePath` 与 `SourceBuffer` 都要填写，否则报参数不对。但 EDK II 规范其实 没有强制。
 
 编译器指定为 `clang`，由于是裸机编程，因此不需要标准 C 库。
 

@@ -25,6 +25,7 @@ if ($LASTEXITCODE -ne 0) {
 Pop-Location
 
 # 下面注释的部分是我用来测试 CMake 的，我还没有验证过。
+# 我还没有了解过 CMake，考完研再来研究。
 
 # & cmake -G "Ninja" -B ./Build
 # & cmake --build ./Build
@@ -57,7 +58,7 @@ Format-Volume -FileSystem FAT32 -NewFileSystemLabel "EVOS" -Confirm:$false | Out
 
 Write-Host "[*] Copying files to VHDX..." -ForegroundColor White
 $drive = (Get-Disk $disk.Number | Get-Partition | Where-Object DriveLetter).DriveLetter
-Copy-Item -Path "./Output/*" -Destination "$($drive):/" -Recurse -Force
+Copy-Item -Path "./.output/*" -Destination "$($drive):/" -Recurse -Force
 
 Write-Host "[*] Dismounting VHDX..." -ForegroundColor Yellow
 Dismount-VHD -Path $vhdPath
